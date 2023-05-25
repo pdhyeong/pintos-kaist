@@ -296,16 +296,16 @@ thread_exit (void) {
    may be scheduled again immediately at the scheduler's whim. */
 void
 thread_yield (void) {
-	struct thread *curr = thread_current ();
+	struct thread *curr = thread_current (); // 현재 실행중인 쓰레드
 	enum intr_level old_level;
 
-	ASSERT (!intr_context ());
+	ASSERT (!intr_context ()); // 외부 인터럽트로 인해 실행되는게 없다면 
 
-	old_level = intr_disable ();
-	if (curr != idle_thread)
+	old_level = intr_disable (); // 인터럽트를 비활성화 해주는 함수. 인터럽트의 이전상태를 리턴한다.
+	if (curr != idle_thread) // 현재 다음쓰레드가 없는 상태가 아니라면
 		list_push_back (&ready_list, &curr->elem);
-	do_schedule (THREAD_READY);
-	intr_set_level (old_level);
+	do_schedule (THREAD_READY); // 희생자 정해서 시작
+	intr_set_level (old_level); // 현재 상태에 따라 인터럽트를 활성화하거나 비활성화하는 함수 인터럽트 이전 상태를 리턴
 }
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
@@ -527,15 +527,15 @@ thread_launch (struct thread *th) {
  * It's not safe to call printf() in the schedule(). */
 static void
 do_schedule(int status) {
-	ASSERT (intr_get_level () == INTR_OFF);
-	ASSERT (thread_current()->status == THREAD_RUNNING);
-	while (!list_empty (&destruction_req)) {
+	ASSERT (intr_get_level () == INTR_OFF); // 현재 인터럽트 꺼져있고
+	ASSERT (thread_current()->status == THREAD_RUNNING); // 현재 쓰레드 상태가 실행중이면
+	while (!list_empty (&destruction_req)) {// 리스트가 비어있지 않다면 
 		struct thread *victim =
-			list_entry (list_pop_front (&destruction_req), struct thread, elem);
-		palloc_free_page(victim);
+			list_entry (list_pop_front (&destruction_req), struct thread, elem); // 
+		palloc_free_page(victim); 
 	}
-	thread_current ()->status = status;
-	schedule ();
+	thread_current ()->status = status; // 쓰레드 상태 변경
+	schedule (); // 스케줄시작
 }
 
 static void

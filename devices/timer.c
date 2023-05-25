@@ -17,9 +17,25 @@
 #error TIMER_FREQ <= 1000 recommended
 #endif
 
+/*
+List element.
+struct list_elem {
+	struct list_elem *prev;      Previous list element.
+	struct list_elem *next;     Next list element. 
+};
+
+List.
+struct list {
+	struct list_elem head;      List head.
+	struct list_elem tail;       List tail. 
+};
+*/
+
+static struct list list_sleep;
+
+
 /* Number of timer ticks since OS booted. */
 static int64_t ticks;
-
 /* Number of loops per timer tick.
    Initialized by timer_calibrate(). */
 static unsigned loops_per_tick;
@@ -73,10 +89,10 @@ timer_calibrate (void) {
 /* Returns the number of timer ticks since the OS booted. */
 int64_t
 timer_ticks (void) {
-	enum intr_level old_level = intr_disable ();
+	enum intr_level old_level = intr_disable ();// 현재 인터럽트 상태 변수저장
 	int64_t t = ticks;
-	intr_set_level (old_level);
-	barrier ();
+	intr_set_level (old_level); // 현재 상태에 따라 인터럽트를 활성화하거나 비활성화 -> 인터럽트 이전 상태를 리턴
+	barrier (); // 동기화 방어
 	return t;
 }
 
@@ -92,7 +108,11 @@ void
 timer_sleep (int64_t ticks) {
 	int64_t start = timer_ticks ();
 
+	// 현재 인터럽트 상태가 on 이면
 	ASSERT (intr_get_level () == INTR_ON);
+	
+	// 함수 들어왔을 시간 재고 틱스 까지 yield실행
+
 	while (timer_elapsed (start) < ticks)
 		thread_yield ();
 }
