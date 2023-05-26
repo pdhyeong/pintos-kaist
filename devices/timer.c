@@ -31,8 +31,6 @@ struct list {
 };
 */
 
-static struct list list_sleep;
-
 
 /* Number of timer ticks since OS booted. */
 static int64_t ticks;
@@ -44,6 +42,8 @@ static intr_handler_func timer_interrupt;
 static bool too_many_loops (unsigned loops);
 static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
+
+extern struct list sleep_list;
 
 /* Sets up the 8254 Programmable Interval Timer (PIT) to
    interrupt PIT_FREQ times per second, and registers the
@@ -113,10 +113,15 @@ timer_sleep (int64_t ticks) {
 	
 	// 함수 들어왔을 시간 재고 틱스 까지 yield실행
 
-	while (timer_elapsed (start) < ticks)
-		thread_yield ();
-}
+	//while (timer_elapsed (start) < ticks)
+	//	thread_yield ();
 
+	// 구현부분
+	if(timer_elapsed(start) < ticks){
+		// ticks는 wake up ticks
+		thread_sleep(start + ticks);
+	}
+}
 /* Suspends execution for approximately MS milliseconds. */
 void
 timer_msleep (int64_t ms) {
@@ -146,6 +151,7 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED) {
 	ticks++;
 	thread_tick ();
+	wakeup(ticks);
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer

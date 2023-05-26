@@ -27,7 +27,7 @@
 /* List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
 static struct list ready_list;
-
+static struct list sleep_list;
 /* Idle thread. */
 static struct thread *idle_thread;
 
@@ -109,7 +109,8 @@ thread_init (void) {
 	lock_init (&tid_lock);
 	list_init (&ready_list);
 	list_init (&destruction_req);
-
+	list_init (&sleep_list);
+	
 	/* Set up a thread structure for the running thread. */
 	initial_thread = running_thread ();
 	init_thread (initial_thread, "main", PRI_DEFAULT);
@@ -216,8 +217,7 @@ thread_create (const char *name, int priority,
    This function must be called with interrupts turned off.  It
    is usually a better idea to use one of the synchronization
    primitives in synch.h. */
-void
-thread_block (void) {
+void thread_block (void) {
 	ASSERT (!intr_context ());
 	ASSERT (intr_get_level () == INTR_OFF);
 	thread_current ()->status = THREAD_BLOCKED;
@@ -294,8 +294,7 @@ thread_exit (void) {
 
 /* Yields the CPU.  The current thread is not put to sleep and
    may be scheduled again immediately at the scheduler's whim. */
-void
-thread_yield (void) {
+void thread_yield (void) {
 	struct thread *curr = thread_current (); // 현재 실행중인 쓰레드
 	enum intr_level old_level;
 
@@ -308,9 +307,40 @@ thread_yield (void) {
 	intr_set_level (old_level); // 현재 상태에 따라 인터럽트를 활성화하거나 비활성화하는 함수 인터럽트 이전 상태를 리턴
 }
 
+void thread_sleep(int64_t ticks){
+	struct thread *curr = thread_current (); // 현재 실행중인 쓰레드
+	enum intr_level old_level;
+
+	ASSERT (!intr_context ()); // 외부 인터럽트로 인해 실행되는게 없다면 
+
+	old_level = intr_disable(); // 인터럽트를 비활성화 해주는 함수. / 인터럽트의 이전상태를 리턴한다.
+	if (curr != idle_thread){ // 현재 다음쓰레드가 없는 상태가 아니라면
+		list_push_back (&sleep_list, &curr->elem);
+		curr->status = THREAD_BLOCKED;
+		curr->wakeup_tick = ticks;
+		schedule();
+	}
+	intr_set_level (old_level); // 현재 상태에 따라 인터럽트를 활성화하거나 비활성화하는 함수 / 인터럽트 이전 상태를 리턴
+}
+void wakeup(int64_t ticks){
+	struct list_elem *current = sleep_list.head.next;
+
+	struct thread *current_thread;
+	while(current->next != NULL){
+		struct list_elem *move = current->next;
+		current_thread = list_entry(current,struct thread,elem);
+		if(current_thread->wakeup_tick <= ticks){
+			list_remove(current);
+			thread_unblock(current_thread);
+			current = move;
+		}
+		else{
+			current = current->next;
+		}
+	}
+}
 /* Sets the current thread's priority to NEW_PRIORITY. */
-void
-thread_set_priority (int new_priority) {
+void thread_set_priority (int new_priority) {
 	thread_current ()->priority = new_priority;
 }
 
