@@ -19,6 +19,7 @@
         "list.h": "c",
         "stddef.h": "c",
         "stdint.h": "c",
-        "__threading_support": "c"
+        "__threading_support": "c",
+        "synch.h": "c"
     }
 }

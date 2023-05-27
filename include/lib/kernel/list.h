@@ -85,7 +85,6 @@
 
 /* List element. */
 struct list_elem {
-   int64_t wakeup_value;
 	struct list_elem *prev;     /* Previous list element. */
 	struct list_elem *next;     /* Next list element. */
 };
