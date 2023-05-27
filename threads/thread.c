@@ -62,6 +62,7 @@ static void init_thread (struct thread *, const char *name, int priority);
 static void do_schedule(int status);
 static void schedule (void);
 static tid_t allocate_tid (void);
+bool cmp_prioity(const struct list_elem * a_elem,const struct list_elem *b_elem,void *aux);
 
 /* Returns true if T appears to point to a valid thread. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
@@ -208,6 +209,10 @@ thread_create (const char *name, int priority,
 	/* Add to run queue. */
 	thread_unblock (t);
 
+	if(thread_get_priority < t->priority){
+		thread_yield();
+	}
+
 	return tid;
 }
 
@@ -240,7 +245,8 @@ thread_unblock (struct thread *t) {
 
 	old_level = intr_disable ();
 	ASSERT (t->status == THREAD_BLOCKED);
-	list_push_back (&ready_list, &t->elem);
+	// list_push_back (&ready_list, &t->elem);
+	list_insert_ordered (&ready_list, &t->elem,cmp_prioity,NULL);
 	t->status = THREAD_READY;
 	intr_set_level (old_level);
 }
@@ -302,11 +308,16 @@ void thread_yield (void) {
 
 	old_level = intr_disable (); // 인터럽트를 비활성화 해주는 함수. 인터럽트의 이전상태를 리턴한다.
 	if (curr != idle_thread) // 현재 다음쓰레드가 없는 상태가 아니라면
-		list_push_back (&ready_list, &curr->elem);
+		list_insert_ordered (&ready_list,&curr->elem,cmp_prioity,NULL);
 	do_schedule (THREAD_READY); // 희생자 정해서 시작
 	intr_set_level (old_level); // 현재 상태에 따라 인터럽트를 활성화하거나 비활성화하는 함수 인터럽트 이전 상태를 리턴
 }
+bool cmp_prioity(const struct list_elem * a_elem,const struct list_elem *b_elem,void *aux){
+	int a = list_entry(a_elem,struct thread,elem)->priority;
+	int b = list_entry(b_elem,struct thread,elem)->priority;
 
+	return a > b;
+}
 void thread_sleep(int64_t ticks){
 	struct thread *curr = thread_current (); // 현재 실행중인 쓰레드
 	enum intr_level old_level;
@@ -342,6 +353,7 @@ void wakeup(int64_t ticks){
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void thread_set_priority (int new_priority) {
 	thread_current ()->priority = new_priority;
+	thread_yield();
 }
 
 /* Returns the current thread's priority. */
