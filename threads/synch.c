@@ -32,6 +32,12 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
+static struct list ready_list;
+
+bool cmp_priority (const struct list_elem *a_elem, const struct list_elem *b_elem, void *aux);
+bool cmp_sem_priority (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
+
+
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
    manipulating it:
@@ -103,20 +109,20 @@ sema_try_down (struct semaphore *sema) {
    and wakes up one thread of those waiting for SEMA, if any.
 
    This function may be called from an interrupt handler. */
+
+// sema 해제 후 priority preemption 기능 추가
 void
 sema_up (struct semaphore *sema) {
 	enum intr_level old_level;
 
 	ASSERT (sema != NULL);
-
 	old_level = intr_disable ();
-
 	if (!list_empty (&sema->waiters)) {
 		list_sort(&sema->waiters, cmp_priority, NULL);
 		thread_unblock (list_entry (list_pop_front (&sema->waiters), struct thread, elem));
 	}
 	sema->value++;
-	thread_set_priority(thread_get_priority());
+	test_max_priority();
 	intr_set_level (old_level);
 }
 
@@ -178,6 +184,22 @@ lock_init (struct lock *lock) {
 	sema_init (&lock->semaphore, 1);
 }
 
+/* priority donation 수행 */
+void donate_priority(void) {
+	// NOTE: 필요에 따라 수행
+	struct thread *curr = thread_current();
+	while (curr->wait_on_lock) {
+		curr->wait_on_lock->holder->priority = curr->priority;
+		curr = curr->wait_on_lock->holder;
+	}
+}
+
+bool cmp_d_priority (const struct list_elem *a_elem, const struct list_elem *b_elem, void *aux) {
+	int a = list_entry (a_elem, struct thread, d_elem)->priority;
+	int b = list_entry (b_elem, struct thread, d_elem)->priority;
+	return a > b;
+}
+
 /* Acquires LOCK, sleeping until it becomes available if
    necessary.  The lock must not already be held by the current
    thread.
@@ -186,14 +208,24 @@ lock_init (struct lock *lock) {
    interrupt handler.  This function may be called with
    interrupts disabled, but interrupts will be turned back on if
    we need to sleep. */
+/* lock을 점유하고 있는 스레드와 요청 하는 스레드의 우선순위를 비교하여
+priority donation을 수행하도록 수정 */
+// NOTE: lock_acquire를 이해한 대로 최종적으로 로직을 수정.
 void
 lock_acquire (struct lock *lock) {
 	ASSERT (lock != NULL);
 	ASSERT (!intr_context ());
 	ASSERT (!lock_held_by_current_thread (lock));
 
+	if (lock->holder) {
+		thread_current ()->wait_on_lock = lock;
+		list_insert_ordered(&lock->holder->list_donation, &thread_current()->d_elem, cmp_d_priority, NULL);
+		donate_priority();
+	}
+
 	sema_down (&lock->semaphore);
-	lock->holder = thread_current ();
+	// 스레드는 sema_down에서 락을 얻을 때 까지 기다리다가, 락을 점유할 수 있는 상황이 되면 탈출하여 아래 줄을 실행함
+	lock->holder = thread_current();
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -215,9 +247,54 @@ lock_try_acquire (struct lock *lock) {
 	return success;
 }
 
-/* Releases LOCK, which must be owned by the current thread.
-   This is lock_release function.
+/* NOTE: 아래 lock_release에서 이 함수를 왜 호출했을까? 
+락을 놓아주고, 지금까지 그 락을 기다리던 스레드들에게 받았던 donation들을 뱉어내고,
+본인의 본래 우선순위로 돌려놓기 위해 호출했음.*/
+void refresh_priority(void) {
+	struct thread *curr = thread_current();
+	// FIXME: Multiple Donation을 구현한 부분. 헤드를 제외한 다른 스레드의 우선순위가 바뀌어서 헤드가 아닌 뒤에 있는 스레드의 우선순위를
+	// donation 받아야 될 경우를 대비해서, donation_list를 정렬한 후, 헤드의 우선순위를 비교하여 가져오던가, for문을 통해 donation_list를 순회하며
+	// 가장 큰 우선순위를 가져오고, 그 우선순외와 비교하여 donation을 수행하도록 수정할 것.
+	int max_prio = list_entry(list_begin(&curr->list_donation), struct thread, d_elem)->priority;
 
+	curr->priority = curr->pre_priority;
+	if (!list_empty(&curr->list_donation)) {
+		list_sort(&curr->list_donation, cmp_d_priority, NULL);
+		if (curr->pre_priority < max_prio) {
+			curr->priority = max_prio;
+		}
+		else{
+			curr->priority = curr->pre_priority;
+		}
+	}
+	else{
+		curr->priority = curr->pre_priority;
+	}
+}
+
+/* 우선순위를 다시 계산 */
+// NOTE: 가독성 개선했고, 함수에 대해 이해를 마쳤음. remove_with_lock(struct lock *lock)는 다음의 과정을 수행함
+/*
+락을 점유하고 있는 스레드를 점유 해제시키고, 홀더를 NULL로 바꿔주기 전에, 
+이 락을 기다리는 리스트를 순회하여 '이제는 이 락을 필요로 하지 않는 스레드'를 빼주어 리스트를 갱신시켜 주는 작업임!
+기다리던 스레드들이 이제는 더 이상 이 락을 필요로 하지 않아서 wait_on_lock이 해당 락이 아니라 NULL이거나, 다른 락에 wait상태로 바뀌어 있다면,
+이 녀석들의 주소를 waiters 리스트에 넣어둔 상태로 내버려 둔다면 락을 필요로 하지도 않는 스레드가 락을 기다리는, 이상한 상황이 야기될 것.
+확실하진 않아서 우근이형한테 자문 구하면 좋을듯
+*/
+void remove_with_lock(struct lock *lock){
+	struct thread * curr = thread_current();
+	struct list_elem *curr_elem = list_begin(&curr->list_donation);
+	while (list_end(&curr->list_donation) != curr_elem) {
+		struct thread *curr_thread = list_entry(curr_elem, struct thread, d_elem);
+		if (curr_thread->wait_on_lock == lock){
+			list_remove(curr_elem);
+		}
+		curr_elem = list_next(curr_elem);
+	}
+}
+
+/* Releases LOCK, which must be owned by the current thread. 현재 스레드가 소유하고 있어야 하는 LOCK을 해제합니다.
+   This is lock_release function.
    An interrupt handler cannot acquire a lock, so it does not
    make sense to try to release a lock within an interrupt
    handler. */
@@ -226,6 +303,8 @@ lock_release (struct lock *lock) {
 	ASSERT (lock != NULL);
 	ASSERT (lock_held_by_current_thread (lock));
 
+	remove_with_lock(lock);
+	refresh_priority();
 	lock->holder = NULL;
 	sema_up (&lock->semaphore);
 }

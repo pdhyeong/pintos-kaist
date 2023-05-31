@@ -27,6 +27,7 @@
 /* List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
 static struct list ready_list;
+
 static struct list sleep_list;
 
 /* Idle thread. */
@@ -65,6 +66,8 @@ static void schedule (void);
 static tid_t allocate_tid (void);
 void wakeup(int64_t g_ticks);
 bool cmp_priority (const struct list_elem *a_elem, const struct list_elem *b_elem, void *aux);
+void refresh_priority(void);
+void donate_priority(void);
 
 /* Returns true if T appears to point to a valid thread. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
@@ -95,7 +98,6 @@ static uint64_t gdt[3] = { 0, 0x00af9a000000ffff, 0x00cf92000000ffff };
 
    It is not safe to call thread_current() until this function
    finishes. */
-
 void
 thread_init (void) {
 	ASSERT (intr_get_level () == INTR_OFF);
@@ -312,7 +314,13 @@ thread_exit (void) {
 
 /* Yields the CPU.  The current thread is not put to sleep and
    may be scheduled again immediately at the scheduler's whim. */
-/* 현재 running 중인 스레드를 비활성화 후 ready_list에 삽입 */
+/* 
+- 현재 running 중인 스레드를 비활성화 후 ready_list에 삽입
+- 원래는 현재 돌고 있는 thread를 리스트 맨 뒤에 삽입했다면,
+이번에는 우선순위를 반영해 리스트 내 적당한 위치에 자리하게 하면 된다. 
+이전에 썼던 list_insert_ordered()를 이용한다.
+*/
+
 void
 thread_yield (void) { 
 	struct thread *curr = thread_current ();
@@ -326,7 +334,7 @@ thread_yield (void) {
 		// list_push_back (&ready_list, &curr->elem);
 		list_insert_ordered(&ready_list, &curr->elem, cmp_priority, NULL);
 	do_schedule (THREAD_READY);  
-	intr_set_level (old_level); 
+	intr_set_level (old_level);
 }
 
 // 여기서의 ticks는 깨워줄 시간
@@ -351,7 +359,6 @@ void thread_sleep (int64_t ticks) {
 	}
 	// do_schedule (THREAD_READY);
 	intr_set_level (old_level);
-
 }
 
 void wakeup(int64_t g_ticks) {
@@ -381,8 +388,18 @@ void wakeup(int64_t g_ticks) {
 void
 thread_set_priority (int new_priority) {
 	// FIXME: 현재 쓰레드의 우선 순위와 ready_list에서 가장 높은 우선 순위를 비교하여 스케쥴링 하는 함수 호출
-	thread_current ()->priority = new_priority;
-	thread_yield();
+	thread_current ()->pre_priority = new_priority;
+	// thread_yield();
+	refresh_priority();
+	test_max_priority();
+}
+
+void test_max_priority(void) {
+	// ready_list에서 우선 순위가 가장 높은 쓰레드와 현재 쓰레드의 우선 순위를 비교
+	// 현재 스레드의 우선순위가 더 작다면 thread_yield()
+	if (list_entry(ready_list.head.next, struct thread, elem)->priority > thread_get_priority()) {
+		thread_yield();
+	}
 }
 
 /* Returns the current thread's priority. */

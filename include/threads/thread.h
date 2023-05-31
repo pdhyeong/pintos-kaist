@@ -91,12 +91,11 @@ struct thread {
 	enum thread_status status;          /* Thread state. */
 	char name[16];                      /* Name (for debugging purposes). */
 	int priority;                       /* Priority. */
-	int64_t wakeup_tick;
-	
+	int64_t wakeup_tick;				// 깨워준다는 기준이 될 비교값(스레드가 잔 시간)이 있어야하므로 스레드 구조체에 멤버 하나를 추가한다.
 	int pre_priority;					// donation 이후 우선순위를 초기화하기 위해 초기 우선순위 값을 저장할 필드
 	struct lock *wait_on_lock;			// 해당 쓰레드가 대기하고 있는 lock자료구조의 주소를 저장할 필드
 	struct list list_donation;			// multiple donation을 고려하기 위한 리스트
-	struct list_elem *d_elem;			// 해당 리스트를 위한 elem도 추가
+	struct list_elem d_elem;			// 해당 리스트를 위한 elem도 추가
 
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
@@ -149,8 +148,12 @@ int thread_get_load_avg (void);
 
 void do_iret (struct intr_frame *tf);
 
-bool cmp_priority (const struct list_elem *a_elem, const struct list_elem *b_elem, void *aux);
-bool cmp_sem_priority (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
+// bool cmp_priority (const struct list_elem *a_elem, const struct list_elem *b_elem, void *aux);
+// bool cmp_sem_priority (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
 
+void test_max_priority(void);
+// void donate_priority(void);
+// void remove_with_lock(struct lock *lock);
+// void refresh_priority(void);
 
 #endif /* threads/thread.h */
