@@ -103,17 +103,18 @@ struct thread {
    struct lock *wait_on_lock;          // 해당 쓰레드가 대기하고 있는 lock자료구조의 주소를 저장할 필드
    struct list list_donation;          // multiple donation을 고려하기 위한 리스트
    struct list_elem d_elem;           // 해당 리스트를 위한 elem도 추가
-   struct file *fdt[40];            // 파일 디스크립터 테이블
+   struct file **fdt;            // 파일 디스크립터 테이블
+   // struct file *fdt[40];
    int next_fd;                  // 테이블 중 비어있는 곳 
    struct list child_list;          // 자식 스레드 리스트
    struct list_elem child_elem;       // 자식 스레드 리스트를 위한 elem
 
    struct thread *parent;            // 부모 스레드
-   struct intr_frame parent_if;
-   struct semaphore fork_sema;
-   struct semaphore load_sema;
+   struct intr_frame save_if;
+   struct semaphore free_sema;
    struct semaphore exit_sema;
-   
+
+   struct semaphore fork_sema;
    struct file *run_file;
    int exit_flag;                  // 스레드 종료 확인을 위한 플래그
    int exit_status;
@@ -123,7 +124,6 @@ struct thread {
    // NOTE: For Advanced Scheduler 
    int nice;
    int recent_cpu;
-
    /* Shared between thread.c and synch.c. */
    struct list_elem elem;              /* List element. */
 

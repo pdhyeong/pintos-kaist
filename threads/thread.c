@@ -132,10 +132,8 @@ thread_start (void) {
 	struct semaphore idle_started;
 	sema_init (&idle_started, 0);
 	thread_create ("idle", PRI_MIN, idle, &idle_started);
-
 	/* Start preemptive thread scheduling. */
 	intr_enable ();
-
 	/* Wait for the idle thread to initialize idle_thread. */
 	sema_down (&idle_started);
 }
@@ -184,18 +182,16 @@ thread_print_stats (void) {
    PRIORITY, but no actual priority scheduling is implemented.
    Priority scheduling is the goal of Problem 1-3. */
 tid_t
-thread_create (const char *name, int priority,
-		thread_func *function, void *aux) {
+thread_create (const char *name, int priority, thread_func *function, void *aux) {
 	struct thread *t;
 	tid_t tid;
-
 	ASSERT (function != NULL);
 
 	/* Allocate thread. */
 	t = palloc_get_page (PAL_ZERO); /* 페이지 할당 */
 	if (t == NULL)
 		return TID_ERROR;
-
+	
 	/* Initialize thread. */
 	init_thread (t, name, priority); /* thread 구조체 초기화*/
 	tid = t->tid = allocate_tid (); /* tid 할당 */
@@ -210,15 +206,11 @@ thread_create (const char *name, int priority,
 	t->tf.ss = SEL_KDSEG;
 	t->tf.cs = SEL_KCSEG;
 	t->tf.eflags = FLAG_IF;
-	t->exit_flag = 1;
+	t->exit_flag = 0;
 	t->next_fd = 2;
-	if(t->parent != NULL){
-		list_push_back(&t->parent->child_list,&t->child_elem);
-	}
-	sema_init(&t->load_sema,1);
-	sema_init(&t->exit_sema,1);
-	sema_init(&t->fork_sema,1);
-	
+	list_push_back(&thread_current()->child_list,&t->child_elem);
+	// t->fdt[0] = palloc_get_page (PAL_ZERO);
+	t->fdt = (struct file **) palloc_get_page(PAL_ZERO);
 	/* Add to run queue. */
 	thread_unblock (t);
 	/* compare the priorities of the currently running thread and the newly inserted one. Yield the CPU if the newly arriving thread has higher priority*/
@@ -499,7 +491,10 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->pre_priority = priority;
 	t->wait_on_lock = NULL;
 	list_init(&t->list_donation);
-
+	list_init(&t->child_list);
+	sema_init(&t->free_sema,0);
+	sema_init(&t->exit_sema,0);
+	sema_init(&t->fork_sema,0);
 	// NOTE: For Advanced Scheduler
 	// t->nice = NICE_DEFAULT;
 	// t->recent_cpu = RECENT_CPU_DEFAULT;

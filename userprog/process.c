@@ -35,6 +35,7 @@ int process_add_file (struct file *f);
 struct file *process_get_file(int fd);
 void process_close_file(int fd);
 void remove_child_process(struct thread *cp);
+static bool duplicate_pte (uint64_t *pte, void *va, void *aux);
 struct thread *get_child_process(int pid);
 /* General process initializer for initd and other process. */
 static void
@@ -89,29 +90,108 @@ tid_t process_fork(const char *name, struct intr_frame *if_ UNUSED)
     // project 2 : system call
     /* Clone current thread to new thread.*/
     struct thread *cur = thread_current();
-    memcpy(&cur->parent_if, if_, sizeof(struct intr_frame));
-
+	if (cur == NULL || if_ == NULL) {
+        return TID_ERROR;
+    }
+    memcpy(&cur->save_if, if_, sizeof(struct intr_frame));
     tid_t tid = thread_create(name, PRI_DEFAULT, __do_fork, cur);
-
     if (tid == TID_ERROR)
     {
         return TID_ERROR;
     }
-    struct thread *child = get_child_process(tid); // child_list안에서 만들어진 child thread를 찾음
-    sema_down(&child->fork_sema);                    // 자식이 메모리에 load 될때까지 기다림(blocked)
-
+    struct thread *child = get_child_process(tid);
+	// printf("%d ->\n",tid);
+    sema_down(&child->fork_sema);
+	// printf("sema_downed\n\n");
     if (child->exit_status == -1)
     {
         return TID_ERROR;
     }
     return tid;
 }
+/* A thread function that copies parent's execution context.
+ * Hint) parent->tf does not hold the userland context of the process.
+ *       That is, you are required to pass second argument of process_fork to
+ *       this function. */
+static void
+__do_fork (void *aux) {
+	struct intr_frame if_;
+	struct thread *parent = (struct thread *) aux;
+	struct thread *current = thread_current ();
+	if (parent == NULL) {
+        // 유효하지 않은 값이면 에러 처리
+        current->exit_status = TID_ERROR;
+        sema_up(&current->fork_sema);
+        thread_exit();
+    }
+	/* TODO: somehow pass the parent_if. (i.e. process_fork()'s if_) */
+	current->parent = parent;
+	struct intr_frame *parent_if = &parent->save_if;
+	bool succ = true;
+	/* 1. Read the cpu context to local stack. */
+	memcpy (&if_, parent_if, sizeof (struct intr_frame));
+	/* 2. Duplicate PT */
+	// printf("copy after cur_save_if= %p\n",current->save_if);
+	current->pml4 = pml4_create();
+	if (current->pml4 == NULL)
+		goto error;
+	process_activate (current);
+#ifdef VM
+	supplemental_page_table_init (&current->spt);
+	if (!supplemental_page_table_copy (&current->spt, &parent->spt))
+		goto error;
+#else
+	// printf("@@@@@@@@@@@@@@@hihihihi\n\n\n");
+	// printf("%p\n",parent->pml4);
+	if (!pml4_for_each (parent->pml4, duplicate_pte, parent))
+		goto error;
+#endif
 
+	/* TODO: Your code goes here.
+	 * TODO: Hint) To duplicate the file object, use `file_duplicate`
+	 * TODO:       in include/filesys/file.h. Note that parent should not return
+	 * TODO:       from the fork() until this function successfully duplicates
+	 * TODO:       the resources of parent.*/
+	// if (parent->next_fd == FD_MAX)
+    //     goto error;
+    // for (int i = 0; i < FD_MAX; i++)
+    // {
+    //     struct file *file = parent->fdt[i];
+    //     if (file == NULL)
+    //         continue;
+    //     struct file *new_file;
+    //     if (file > 2)
+    //         new_file = file_duplicate(file);
+    //     else
+	// 		new_file = file;
+    //     current->fdt[i] = new_file;
+    // }
+    // current->next_fd = parent->next_fd;
+	// current->tf = if_;
+	// printf("file copy\n\n");
+	for (int i=2; i<40; i++){
+      if(parent->fdt[i]!=NULL) 
+	  	current->fdt[i] = file_duplicate(parent->fdt[i]);
+   	}
+	if_.R.rax = 0;
+	process_init();
+	// printf("sema\n\n");
+	sema_up(&current->fork_sema);
+	/* Finally, switch to the newly created process. */
+	if (succ){
+		// printf("do fork sema up end \n\n");
+		do_iret (&if_);}
+error:
+	current->exit_status = TID_ERROR;
+	sema_up(&current->fork_sema);
+	thread_exit ();
+}
 #ifndef VM
 /* Duplicate the parent's address space by passing this function to the
  * pml4_for_each. This is only for the project 2. */
 static bool
 duplicate_pte (uint64_t *pte, void *va, void *aux) {
+	// printf("dupdup\n\n");
 	struct thread *current = thread_current ();
 	struct thread *parent = (struct thread *) aux;
 	void *parent_page;
@@ -125,11 +205,14 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 	/* 2. Resolve VA from the parent's page map level 4. */
 	parent_page = pml4_get_page (parent->pml4, va);
 	if(parent_page == NULL){
-		return true;
+		return false;
 	}
 	/* 3. TODO: Allocate new PAL_USER page for the child and set result to
 	 *    TODO: NEWPAGE. */
-	newpage = palloc_get_page(PAL_USER);
+	newpage = palloc_get_page(PAL_USER|PAL_ZERO);
+	if(newpage == NULL){
+		return false;
+	}
 	/* 4. TODO: Duplicate parent's page to the new page and
 	 *    TODO: check whether parent's page is writable or not (set WRITABLE
 	 *    TODO: according to the result). */
@@ -144,84 +227,17 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 	return true;
 }
 #endif
-
-/* A thread function that copies parent's execution context.
- * Hint) parent->tf does not hold the userland context of the process.
- *       That is, you are required to pass second argument of process_fork to
- *       this function. */
-static void
-__do_fork (void *aux) {
-	struct intr_frame if_;
-	struct thread *parent = (struct thread *) aux;
-	struct thread *current = thread_current ();
-	/* TODO: somehow pass the parent_if. (i.e. process_fork()'s if_) */
-	current->parent = parent;
-	struct intr_frame *parent_if;
-	bool succ = true;
-	parent_if = &parent->parent_if;
-	/* 1. Read the cpu context to local stack. */
-	memcpy (&if_, parent_if, sizeof (struct intr_frame));
-
-	if_.R.rax = 0;
-	/* 2. Duplicate PT */
-	current->pml4 = pml4_create();
-	if (current->pml4 == NULL)
-		goto error;
-
-	process_activate (current);
-#ifdef VM
-	supplemental_page_table_init (&current->spt);
-	if (!supplemental_page_table_copy (&current->spt, &parent->spt))
-		goto error;
-#else
-	if (!pml4_for_each (parent->pml4, duplicate_pte, parent))
-		goto error;
-#endif
-
-	/* TODO: Your code goes here.
-	 * TODO: Hint) To duplicate the file object, use `file_duplicate`
-	 * TODO:       in include/filesys/file.h. Note that parent should not return
-	 * TODO:       from the fork() until this function successfully duplicates
-	 * TODO:       the resources of parent.*/
-	if (parent->next_fd == FD_MAX)
-        goto error;
-
-    for (int i = 0; i < FD_MAX; i++)
-    {
-        struct file *file = parent->fdt[i];
-        if (file == NULL)
-            continue;
-        struct file *new_file;
-        if (file > 2)
-            new_file = file_duplicate(file);
-        else
-			new_file = file;
-        current->fdt[i] = new_file;
-    }
-    current->next_fd = parent->next_fd;
-	sema_up(&current->fork_sema);
-	process_init();
-	/* Finally, switch to the newly created process. */
-	if (succ)
-		do_iret (&if_);
-error:
-	current->exit_status = TID_ERROR;
-	sema_up(&current->fork_sema);
-	thread_exit ();
-}
 struct thread *get_child_process(int pid)
 {
 	struct thread *par = thread_current();
-	struct list_elem *current_elem = list_begin(&par->child_list);
-	struct thread *current_thread;
-	while (current_elem != list_end(&par->child_list))
-	{
-		current_thread = list_entry(current_elem, struct thread, elem);
-		if (current_thread->tid == pid)
-		{
-			return current_thread;
+	struct list_elem *current_elem;
+
+	if(list_empty(&par->child_list)) return NULL;
+
+	for(current_elem = list_front(&par->child_list);current_elem != list_tail(&par->child_list);current_elem = list_next(current_elem)){
+		if(list_entry(current_elem,struct thread,child_elem)->tid == pid){
+			return list_entry(current_elem,struct thread,child_elem);
 		}
-		current_elem = list_next(current_elem);
 	}
 	return NULL;
 }
@@ -245,7 +261,7 @@ int process_exec(void *f_name)
     process_cleanup();
 
     // for argument parsing
-    char *parse[64]; 
+    char *parse[128];
     int count = 0;  
 
     char *token;    
@@ -319,13 +335,14 @@ int process_add_file (struct file *f){
 
 	struct thread *cur = thread_current();
 
+	while(cur->next_fd < FD_MAX && cur->fdt[cur->next_fd]){
+		cur->next_fd++;
+	}
+	if(cur->next_fd >= FD_MAX) return -1;
+	//추가된 파일 객체의 File Descriptor 반환
 	//파일 객체(struct file)를 가리키는 포인터를 File Descriptor 테이블에 추가
 	cur->fdt[cur->next_fd] = f;
-
-	//다음 File Descriptor 값 1 증가
-	cur->next_fd++;
-	//추가된 파일 객체의 File Descriptor 반환
-	return cur->next_fd-1;
+	return cur->next_fd;
 }
 /*
 find process using fd number 
@@ -346,10 +363,11 @@ void process_close_file(int fd){
 	}
 	cur->fdt[fd] = NULL;
 }
-void remove_child_process(struct thread *cp){
-	list_remove(&cp->child_elem);
-	palloc_free_page(cp);
-}
+/*FIXME: 잠시 대기*/
+// void remove_child_process(struct thread *cp){
+// 	list_remove(&cp->child_elem);
+// 	palloc_free_page(cp);
+// }
 // void argument_stack(char **parse, int count, void *rsp)
 // {
 // 	// --rsp;
@@ -398,18 +416,15 @@ process_wait (tid_t child_tid UNUSED) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
-	// struct thread *find_child = get_child_process(child_tid);
-	// printf("%p\n\n\n",find_child);
-	// if(find_child == NULL){
-	// 	return -1;
-	// }
-	// sema_down(&find_child->load_sema);
-	// int exit_status = find_child->exit_status;
-	// remove_child_process(find_child);
-	// sema_up(&find_child->exit_sema);
-    // return exit_status;
-	for(int i = 0;i<100000000;i++){}
-	return -1;
+	struct thread *find_child = get_child_process(child_tid);
+	if(find_child == NULL){
+		return -1;
+	}
+	sema_down(&find_child->exit_sema);
+	int exit_status = find_child->exit_status;
+	list_remove(&find_child->child_elem);
+	sema_up(&find_child->free_sema);
+	return exit_status;
 }
 
 /* Exit the process. This function is called by thread_exit (). */
@@ -420,12 +435,13 @@ process_exit (void) {
 	 * TODO: Implement process termination message (see
 	 * TODO: project2/process_termination.html).
 	 * TODO: We recommend you to implement process resource cleanup here. */
-	// for(int i = 0;i<40;i++){
-	// 	close(i);
-	// }
-	// file_close(cur->run_file);
-	// sema_up(&cur->load_sema);
-	// sema_down(&cur->exit_sema);
+	for(int i= 0;i<FD_MAX;i++){
+		close(i);
+	}
+	palloc_free_page(cur->fdt);
+	file_close(cur->run_file);
+	sema_up(&cur->exit_sema);
+	sema_down(&cur->free_sema);
     process_cleanup();            // pml4를 날림(이 함수를 call 한 thread의 pml4)
 }
 
@@ -544,14 +560,17 @@ load (const char *file_name, struct intr_frame *if_) {
 	if (t->pml4 == NULL)
 		goto done;
 	process_activate (thread_current ());
-
+	lock_acquire(&filesys_lock);
 	/* Open executable file. */
 	file = filesys_open (file_name);
 	if (file == NULL) {
+		lock_release(&filesys_lock);
 		printf ("load: %s: open failed\n", file_name);
 		goto done;
 	}
-
+	t->run_file = file;
+	file_deny_write(file);
+	lock_release(&filesys_lock);
 	/* Read and verify executable header. */
 	if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
 			|| memcmp (ehdr.e_ident, "\177ELF\2\1\1", 7)
@@ -626,12 +645,11 @@ load (const char *file_name, struct intr_frame *if_) {
 
 	/* TODO: Your code goes here.
 	 * TODO: Implement argument passing (see project2/argument_passing.html). */
-
 	success = true;
 
 done:
 	/* We arrive here whether the load is successful or not. */
-	file_close (file);
+	// file_close (file);
 	return success;
 }
 

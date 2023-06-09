@@ -22,7 +22,7 @@ void check_address(void *addr);
 void get_argument(void *rsp, int *arg, int count);
 void halt(void);
 void exit(int status);
-pid_t fork(const char *thread_name);
+pid_t _fork(const char *thread_name,struct intr_frame *f);
 int exec(const char *cmd_line);
 int wait(pid_t pid);
 bool create(const char *file, unsigned initial_size);
@@ -81,7 +81,9 @@ void syscall_handler(struct intr_frame *f UNUSED)
 		exit(f->R.rdi);
 		break;
 	case SYS_FORK: /* Clone current process. */
-		f->R.rax = fork(f->R.rdi);
+		// printf("fork!\n");
+		memcpy(&thread_current()->save_if, f, sizeof(struct intr_frame));
+		f->R.rax = _fork(f->R.rdi,f);
 		break;
 	case SYS_EXEC: /* Switch current process. */
 		f->R.rax = exec(f->R.rdi);
@@ -139,6 +141,7 @@ void exit(int status)
 	struct thread *cur = thread_current (); 
     /* Save exit status at process descriptor */
     printf("%s: exit(%d)\n" ,cur->name, status);
+	cur->exit_status = status;
     thread_exit();
 }
 /*
@@ -167,10 +170,9 @@ THREAD_NAME이라는 이름을 가진 현재 프로세스의 복제본인 새 �
 피호출자(callee) 저장 레지스터인 %RBX, %RSP, %RBP와 %R12 - %R15를 제외한 레지스터 값을 복제할 필요가 없습니다.
  자식 프로세스의 pid를 반환해야 합니다.
 */
-pid_t fork(const char *thread_name)
+pid_t _fork(const char *thread_name,struct intr_frame *f)
 {
-	struct thread *cur = thread_current(); 
-	return process_fork(thread_name,&cur->tf);
+	return process_fork(thread_name,f);
 }
 /*
 현재의 프로세스가 cmd_line에서 이름이 주어지는 실행가능한 프로세스로 변경됩니다. 이때 주어진 인자들을 전달합니다.
@@ -178,6 +180,7 @@ pid_t fork(const char *thread_name)
 */
 int exec(const char *cmd_line)
 {
+	check_address(cmd_line);
 	char *fn_copy;
 	tid_t tid;
 
@@ -187,7 +190,6 @@ int exec(const char *cmd_line)
 	strlcpy (fn_copy, cmd_line, PGSIZE);
 	tid = process_exec(fn_copy);
 	if(tid == -1){
-		palloc_free_page(fn_copy);
 		return -1;
 	}
 	return tid;
@@ -276,6 +278,7 @@ buffer로부터 open file fd로 size 바이트를 적어줍니다.
 */
 int write(int fd, const void *buffer, unsigned size)
 {
+	check_address(buffer);
 	int file_size;
 	if (fd == STDOUT_FILENO)
 	{
@@ -283,14 +286,16 @@ int write(int fd, const void *buffer, unsigned size)
 		file_size = size;
 	}
 	else if(fd == STDIN_FILENO){
-		return -1;
+		return 0;
 	}
 	else{
+		struct file *result_file = process_get_file(fd);
+		if(result_file == NULL) return 0;
 		lock_acquire(&filesys_lock);
-		file_size = file_write(process_get_file(fd), buffer, size);
+		file_size = file_write(result_file, buffer, size);
 		lock_release(&filesys_lock);
+		return file_size;
 	}
-	return file_size;
 }
 /*
 open file fd에서 읽거나 쓸 다음 바이트를 position으로 변경합니다.

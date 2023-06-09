@@ -11,6 +11,7 @@
         "__threading_support": "c",
         "__config": "c",
         "locale": "c",
-        "mmu.h": "c"
+        "mmu.h": "c",
+        "thread.h": "c"
     }
 }

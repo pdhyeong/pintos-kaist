@@ -146,8 +146,11 @@ pdp_for_each (uint64_t *pdp,
 /* Apply FUNC to each available pte entries including kernel's. */
 bool
 pml4_for_each (uint64_t *pml4, pte_for_each_func *func, void *aux) {
+	// printf("pml4@@@@@@@@@@@@@@\n");
 	for (unsigned i = 0; i < PGSIZE / sizeof(uint64_t *); i++) {
+		// printf("111111111111\n\n");
 		uint64_t *pdpe = ptov((uint64_t *) pml4[i]);
+		// printf("22222222222\n\n");
 		if (((uint64_t) pdpe) & PTE_P)
 			if (!pdp_for_each ((uint64_t *) PTE_ADDR (pdpe), func, aux, i))
 				return false;
