@@ -91,7 +91,8 @@ timer_elapsed (int64_t then) {
 /* Suspends execution for approximately TICKS timer ticks. */
 void
 timer_sleep (int64_t ticks) { /* ticks: 재우고 싶은 시간 */
-	int64_t start = timer_ticks ();
+	// timer_sleep 재우는 시간
+	int64_t start = timer_ticks (); // os 현재시간
 
 	// 현재 인터럽트 상태를 확인 후 활성화 되었다면 통과. 아니라면 에러.
 	// ASSERT (intr_get_level () == INTR_ON);
@@ -99,7 +100,7 @@ timer_sleep (int64_t ticks) { /* ticks: 재우고 싶은 시간 */
 	// 	thread_yield ();
 
 	if (timer_elapsed (start) < ticks)
-		thread_sleep(start + ticks);
+		thread_sleep(start + ticks); // 스레드를 재우는 것(현재시간+설정시간)
 }
 
 /* Suspends execution for approximately MS milliseconds. */

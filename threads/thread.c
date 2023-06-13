@@ -192,19 +192,22 @@ thread_create (const char *name, int priority,
 	ASSERT (function != NULL);
 
 	/* Allocate thread. */
-	t = palloc_get_page (PAL_ZERO);
+	t = palloc_get_page (PAL_ZERO); // 페이지 할당
 	if (t == NULL)
 		return TID_ERROR;
 
 	/* Initialize thread. */
-	init_thread (t, name, priority);
-	tid = t->tid = allocate_tid ();
+	init_thread (t, name, priority); // thread 구조체 초기화
+	tid = t->tid = allocate_tid ();  // tid 할당
+
+	struct file **new_fdt = (struct file **)palloc_get_multiple(PAL_ZERO,3);
+	t->fdt = new_fdt;
 
 	/* Call the kernel_thread if it scheduled.
 	 * Note) rdi is 1st argument, and rsi is 2nd argument. */
-	t->tf.rip = (uintptr_t) kernel_thread;
-	t->tf.R.rdi = (uint64_t) function;
-	t->tf.R.rsi = (uint64_t) aux;
+	t->tf.rip = (uintptr_t) kernel_thread;	// 커널 스택 할당
+	t->tf.R.rdi = (uint64_t) function;		// 스레드가 수행할 함수
+	t->tf.R.rsi = (uint64_t) aux;			// 수행할 함수의 인자
 	t->tf.ds = SEL_KDSEG;
 	t->tf.es = SEL_KDSEG;
 	t->tf.ss = SEL_KDSEG;
@@ -213,6 +216,8 @@ thread_create (const char *name, int priority,
 
 	/* Add to run queue. */
 	thread_unblock (t);
+
+	list_push_back(&thread_current()->child_list,&t->child_elem);
 	/* compare the priorities of the currently running thread 
 	and the newly inserted one. Yield the CPU if the newly 
 	arriving thread has higher priority*/
@@ -333,22 +338,20 @@ thread_yield (void) {
 		// FIXME: insert to ready_list in priority order
 		// list_push_back (&ready_list, &curr->elem);
 		list_insert_ordered(&ready_list, &curr->elem, cmp_priority, NULL);
-	do_schedule (THREAD_READY);  
+	do_schedule (THREAD_READY);
 	intr_set_level (old_level);
 }
 
-// 여기서의 ticks는 깨워줄 시간
+void thread_sleep(int64_t ticks){
 /* if the current thread is not idle thread,
 	change the state of the caller thread to BLOCKED,
 	store the local tick to wake up,
 	update the global tick if necessary,
 	and call schedule() */
 /* When you manipulate thread list, disable interrupt! */
-void thread_sleep (int64_t ticks) {
 	struct thread *curr = thread_current ();
 	enum intr_level old_level;
 
-	// ASSERT (!intr_context ());
 	old_level = intr_disable ();
 
 	if (curr != idle_thread) {
@@ -357,7 +360,6 @@ void thread_sleep (int64_t ticks) {
 		curr->wakeup_tick = ticks;
 		schedule();
 	}
-	// do_schedule (THREAD_READY);
 	intr_set_level (old_level);
 }
 
@@ -387,9 +389,8 @@ void wakeup(int64_t g_ticks) {
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) {
-	// FIXME: 현재 쓰레드의 우선 순위와 ready_list에서 가장 높은 우선 순위를 비교하여 스케쥴링 하는 함수 호출
 	thread_current ()->pre_priority = new_priority;
-	// thread_yield();
+	// FIXME: 현재 쓰레드의 우선 순위와 ready_list에서 가장 높은 우선 순위를 비교하여 스케쥴링 하는 함수 호출
 	refresh_priority();
 	test_max_priority();
 }
@@ -499,7 +500,13 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->magic = THREAD_MAGIC;
 	t->pre_priority = priority;
 	t->wait_on_lock = NULL;
+	t->exit_flag = 1;
+	t->next_fd = 2;
 	list_init(&t->list_donation);
+	list_init(&t->child_list);
+	sema_init(&t->load_sema,0);
+	sema_init(&t->exit_sema,0);
+	sema_init(&t->free_sema,0);
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should

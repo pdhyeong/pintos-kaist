@@ -225,6 +225,7 @@ lock_acquire (struct lock *lock) {
 
 	sema_down (&lock->semaphore);
 	// 스레드는 sema_down에서 락을 얻을 때 까지 기다리다가, 락을 점유할 수 있는 상황이 되면 탈출하여 아래 줄을 실행함
+	thread_current()->wait_on_lock = NULL;
 	lock->holder = thread_current();
 }
 

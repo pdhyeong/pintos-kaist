@@ -5,6 +5,7 @@
 #include <list.h>
 #include <stdint.h>
 #include "threads/interrupt.h"
+#include "threads/synch.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -28,6 +29,12 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 
+/* File descriptor*/
+#define FD_MIN 2                       /* Lowest File descriptor */
+#define FD_MAX 127                      /* Highest File descriptor */
+
+#define STDIN_FILENO	0
+#define STDOUT_FILENO	1
 /* A kernel thread or user process.
  *
  * Each thread structure is stored in its own 4 kB page.  The
@@ -96,6 +103,21 @@ struct thread {
 	struct lock *wait_on_lock;			// 해당 쓰레드가 대기하고 있는 lock자료구조의 주소를 저장할 필드
 	struct list list_donation;			// multiple donation을 고려하기 위한 리스트
 	struct list_elem d_elem;			// 해당 리스트를 위한 elem도 추가
+	struct file **fdt;					// 파일 디스크립터 테이블
+	int next_fd;						// 테이블 중 비어있는 곳 
+	struct list child_list;				// 자식 스레드 리스트
+	struct list_elem child_elem;		// 자식 스레드 리스트를 위한 elem
+
+	struct thread *parent;				// 부모 스레드
+	struct intr_frame parent_if;
+	struct semaphore load_sema;
+	struct semaphore exit_sema;
+	struct semaphore free_sema;
+	
+	int exit_flag;						// 스레드 종료 확인을 위한 플래그
+	int load_flag;                  
+
+	struct file *running_file;   
 
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
@@ -108,7 +130,6 @@ struct thread {
 	/* Table for whole virtual memory owned by thread. */
 	struct supplemental_page_table spt;
 #endif
-
 	/* Owned by thread.c. */
 	struct intr_frame tf;               /* Information for switching */
 	unsigned magic;                     /* Detects stack overflow. */
@@ -148,12 +169,6 @@ int thread_get_load_avg (void);
 
 void do_iret (struct intr_frame *tf);
 
-// bool cmp_priority (const struct list_elem *a_elem, const struct list_elem *b_elem, void *aux);
-// bool cmp_sem_priority (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
-
 void test_max_priority(void);
-// void donate_priority(void);
-// void remove_with_lock(struct lock *lock);
-// void refresh_priority(void);
 
 #endif /* threads/thread.h */
