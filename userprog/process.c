@@ -22,6 +22,7 @@
 #include "threads/vaddr.h"
 #include "intrinsic.h"
 #include "threads/synch.h"
+#include "vm/vm.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -361,9 +362,10 @@ int process_wait(tid_t child_tid UNUSED)
 void process_exit(void)
 {
 	struct thread *cur = thread_current();
-	for (int i = 2; i < 64; i++)
+	for (int i = FD_MIN; i < FD_MAX; i++)
 		close(i);
-	// palloc_free_multiple(cur->fdt,2);
+	palloc_free_multiple(cur->fdt,3);
+	supplemental_page_table_kill(&cur->spt);
 	file_close(cur->running_file);
 	sema_up(&cur->exit_sema);
 	sema_down(&cur->free_sema);
@@ -665,24 +667,15 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
 		/* Get a page of memory. */
-		uint8_t *kpage = palloc_get_page (PAL_USER);
-		if (kpage == NULL)
-			return false;
-
-		/* Load this page. */
-		if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes) {
-			palloc_free_page (kpage);
-			return false;
-		}
-		memset (kpage + page_read_bytes, 0, page_zero_bytes);
-
-		/* Add the page to the process's address space. */
-		if (!install_page (upage, kpage, writable)) {
-			printf("fail\n");
-			palloc_free_page (kpage);
-			return false;
-		}
-
+		// FIXME: 실행전 vm.h 파일 지워주기
+		struct page *newpage = (struct page*)malloc(sizeof(struct page));
+		newpage->_file = file;
+		newpage->offset = ofs;
+		newpage->va = upage;
+		newpage->writable = writable;
+		newpage->read_bytes = read_bytes;
+		newpage->zero_bytes = zero_bytes;
+		spt_insert_page(&thread_current()->spt,newpage);
 		/* Advance. */
 		read_bytes -= page_read_bytes;
 		zero_bytes -= page_zero_bytes;
@@ -705,6 +698,9 @@ setup_stack (struct intr_frame *if_) {
 		else
 			palloc_free_page (kpage);
 	}
+	// TODO: 할당후 설정 해줘야함......
+	struct page *new_page = (struct page *)malloc(sizeof(struct page));
+
 	return success;
 }
 

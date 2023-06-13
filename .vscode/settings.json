@@ -11,6 +11,20 @@
         "__threading_support": "c",
         "__config": "c",
         "locale": "c",
-        "mmu.h": "c"
+        "mmu.h": "c",
+        "string": "c",
+        "variant": "c",
+        "hash.h": "c",
+        "__locale": "c",
+        "bitset": "c",
+        "optional": "c",
+        "string_view": "c",
+        "system_error": "c",
+        "type_traits": "c",
+        "vector": "c",
+        "memory_resource": "c",
+        "disk.h": "c",
+        "stdlib.h": "c",
+        "inttypes.h": "c"
     }
 }

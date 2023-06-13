@@ -2,6 +2,7 @@
 #define VM_VM_H
 #include <stdbool.h>
 #include "threads/palloc.h"
+#include "list.h"
 
 enum vm_type {
 	/* page not initialized */
@@ -35,6 +36,9 @@ struct page_operations;
 struct thread;
 
 #define VM_TYPE(type) ((type) & 7)
+#define VM_UNINIT	0
+#define VM_FILE	1
+#define VM_ANON	2
 
 /* The representation of "page".
  * This is kind of "parent class", which has four "child class"es, which are
@@ -45,8 +49,20 @@ struct page {
 	void *va;              /* Address in terms of user space */
 	struct frame *frame;   /* Back reference for frame */
 
-	/* Your implementation */
 
+	/* Your implementation */
+	bool writable;			// True일 경우 write가능
+	bool is_loaded;			// 물리 메모리의 탑재 여부
+	struct file *_file;		// 가상주소와 매핌된 파일
+	struct list_elem mmap_elem; 	// mmap 리스트 element
+
+	size_t offset;		//  읽을 offset
+	size_t read_bytes;	// 가상 페이지 쓰여져 있는 데이터 크기
+	size_t zero_bytes;	// 0으로 채울 남은 바이트
+
+	size_t swap_slot;	// 스왑 슬롯
+
+	struct hash_elem h_elem;	// 테이블 element
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */
 	union {
@@ -63,6 +79,8 @@ struct page {
 struct frame {
 	void *kva;
 	struct page *page;
+	struct thread *thread;
+	struct list_elem lru;
 };
 
 /* The function table for page operations.
@@ -85,6 +103,7 @@ struct page_operations {
  * We don't want to force you to obey any specific design for this struct.
  * All designs up to you for this. */
 struct supplemental_page_table {
+	struct hash vm;
 };
 
 #include "threads/thread.h"

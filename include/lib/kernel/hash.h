@@ -76,6 +76,9 @@ bool hash_init (struct hash *, hash_hash_func *, hash_less_func *, void *aux);
 void hash_clear (struct hash *, hash_action_func *);
 void hash_destroy (struct hash *, hash_action_func *);
 
+static unsigned vm_hash_func(const struct hash_elem *e,void *aux);
+static bool vm_less_func(const struct hash_elem *a,const struct hash_elem *b,void *aux);
+
 /* Search, insertion, deletion. */
 struct hash_elem *hash_insert (struct hash *, struct hash_elem *);
 struct hash_elem *hash_replace (struct hash *, struct hash_elem *);

@@ -37,7 +37,6 @@ hash_init (struct hash *h,
 	} else
 		return false;
 }
-
 /* Removes all the elements from H.
 
    If DESTRUCTOR is non-null, then it is called for each element
