@@ -25,6 +25,7 @@
         "memory_resource": "c",
         "disk.h": "c",
         "stdlib.h": "c",
-        "inttypes.h": "c"
+        "inttypes.h": "c",
+        "vm.h": "c"
     }
 }

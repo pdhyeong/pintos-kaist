@@ -13,5 +13,5 @@ int process_add_file (struct file *f);
 struct file *process_get_file(int fd);
 void process_close_file(int fd);
 void remove_child_process(struct thread *cp);
-
+bool install_page(void *upage, void *kpage, bool writable);
 #endif /* userprog/process.h */

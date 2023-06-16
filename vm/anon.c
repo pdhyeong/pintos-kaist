@@ -1,8 +1,8 @@
 /* anon.c: Implementation of page for non-disk image (a.k.a. anonymous page). */
+
 #include "vm/vm.h"
 #include "devices/disk.h"
-#include <stdlib.h>
-#include "devices/disk.c"
+
 /* DO NOT MODIFY BELOW LINE */
 static struct disk *swap_disk;
 static bool anon_swap_in (struct page *page, void *kva);
@@ -21,8 +21,7 @@ static const struct page_operations anon_ops = {
 void
 vm_anon_init (void) {
 	/* TODO: Set up the swap_disk. */
-	// TODO: 초기화 진행해야함
-	swap_disk = (struct disk *)malloc(sizeof(struct disk));
+	swap_disk = NULL;
 }
 
 /* Initialize the file mapping */
