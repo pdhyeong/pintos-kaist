@@ -26,6 +26,10 @@
         "disk.h": "c",
         "stdlib.h": "c",
         "inttypes.h": "c",
-        "vm.h": "c"
+        "vm.h": "c",
+        "__string": "c",
+        "atomic": "c",
+        "cstring": "c",
+        "memory": "c"
     }
 }

@@ -6,6 +6,8 @@
 #include "hash.h"
 #include "threads/vaddr.h"
 
+struct list frame_list;
+
 enum vm_type {
 	/* page not initialized */
 	VM_UNINIT = 0,
@@ -79,6 +81,7 @@ struct page {
 struct frame {
 	void *kva;
 	struct page *page;
+	struct list_elem f_elem;
 };
 
 /* The function table for page operations.

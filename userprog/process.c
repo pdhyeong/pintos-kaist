@@ -36,7 +36,7 @@ struct file *process_get_file(int fd);
 void process_close_file(int fd);
 struct thread *get_child_process(int pid);
 
-struct info
+struct image
 {
 	off_t offset;
 	size_t read_bytes;
@@ -767,9 +767,9 @@ lazy_load_segment(struct page *page, void *aux)
    /* TODO: Load the segment from the file */
    /* TODO: This called when the first page fault occurs on address VA. */
    /* TODO: VA is available when calling this function. */
-   struct file *file = ((struct info *)aux)->file;
-   off_t ofs = ((struct info *)aux)->offset;
-   uint32_t file_read_bytes = ((struct info *)aux)->read_bytes;
+   struct file *file = ((struct image *)aux)->file;
+   off_t ofs = ((struct image *)aux)->offset;
+   uint32_t file_read_bytes = ((struct image *)aux)->read_bytes;
    uint32_t file_zero_bytes = PGSIZE - file_read_bytes;
    file_seek(file,ofs);
    
@@ -817,7 +817,7 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
       /* TODO: Set up aux to pass information to the lazy_load_segment. */
-      struct info *file_info = (struct info *)malloc(sizeof(struct info));
+      struct image *file_info = (struct image *)malloc(sizeof(struct image));
       file_info->file = file;
       file_info->offset = ofs;
       file_info->read_bytes = page_read_bytes;
@@ -851,6 +851,7 @@ setup_stack(struct intr_frame *if_)
    if(success){
 		if (vm_claim_page(stack_bottom)){
 			if_->rsp = USER_STACK;
+			thread_current()->save_stack_bottom = stack_bottom;
 		}
    }
 
