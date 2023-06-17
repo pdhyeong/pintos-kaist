@@ -169,6 +169,10 @@ vm_get_frame(void)
 static void
 vm_stack_growth(void *addr UNUSED)
 {
+	if (vm_alloc_page(VM_ANON, addr, 1))
+	{
+		thread_current()->save_stack_bottom -= PGSIZE;
+	}
 }
 
 /* Handle the fault on write_protected page */
@@ -184,15 +188,25 @@ bool vm_try_handle_fault(struct intr_frame *f UNUSED, void *addr UNUSED,
 	struct supplemental_page_table *spt UNUSED = &thread_current()->spt;
 	/* TODO: Validate the fault */
 	/* TODO: Your code goes here */
-	if (is_kernel_vaddr(addr))
+	if (is_kernel_vaddr(addr) || !addr || !not_present)
 	{
 		return false;
 	}
 	struct page *page = spt_find_page(spt, addr);
-	if (vm_do_claim_page(page))
+	if (page == NULL)
 	{
-		return true;
+		if (thread_current()->save_stack_bottom >= addr && addr >= USER_STACK - (1 << 20))
+		{
+			vm_stack_growth(pg_round_down(addr));
+			if(vm_claim_page(pg_round_down(addr))){
+				return true;
+			}
+			return false;
+		}
+		return false;
 	}
+	if(vm_do_claim_page(page))
+		return true;
 	return false;
 	// return vm_do_claim_page (page);
 }
@@ -253,13 +267,14 @@ bool supplemental_page_table_copy(struct supplemental_page_table *dst UNUSED, st
 	{
 		struct page *parent_page = hash_entry(hash_cur(&hash_iter), struct page, h_elem);
 		success = vm_alloc_page_with_initializer(parent_page->uninit.type, parent_page->va, parent_page->writable, parent_page->uninit.init, parent_page->uninit.aux);
-		if(!success)
+		if (!success)
 			return false;
 		struct page *child_page = spt_find_page(dst, parent_page->va);
 		if (parent_page->frame)
 		{
 			success = vm_do_claim_page(child_page);
-			if(!success){
+			if (!success)
+			{
 				return false;
 			}
 			memcpy(child_page->frame->kva, parent_page->frame->kva, PGSIZE);
@@ -268,11 +283,18 @@ bool supplemental_page_table_copy(struct supplemental_page_table *dst UNUSED, st
 	return success;
 }
 
+void hash_destroy_func(struct hash_elem *e, void *aux)
+{
+	struct page *page = hash_entry(e, struct page, h_elem);
+	vm_dealloc_page(page);
+}
+
 /* Free the resource hold by the supplemental page table */
 void supplemental_page_table_kill(struct supplemental_page_table *spt UNUSED)
 {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
-* TODO: writeback all the modified contents to the storage. */
+	 * TODO: writeback all the modified contents to the storage. */
+	hash_destroy(&spt->vm, hash_destroy_func);
 }
 
 static unsigned vm_hash_func(const struct hash_elem *e, void *aux)

@@ -249,7 +249,9 @@ int process_exec(void *f_name)
 
    /* We first kill the current context */
    process_cleanup();
-
+   #ifdef VM
+   supplemental_page_table_init(&cur->spt);
+   #endif
    // for argument parsing
    char *parse[128];
    int count = 0;
@@ -271,9 +273,12 @@ int process_exec(void *f_name)
       palloc_free_page(file_name);
       return -1;
    }
+   
    argument_stack(parse, count, &_if.rsp);
+
    _if.R.rdi = count;
    _if.R.rsi = _if.rsp + 8;
+
    palloc_free_page(file_name);
 
    /* Start switched process. */
