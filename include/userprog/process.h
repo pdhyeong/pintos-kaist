@@ -3,6 +3,13 @@
 
 #include "threads/thread.h"
 
+struct image
+{
+	off_t offset;
+	size_t read_bytes;
+	struct file *file;
+};
+
 tid_t process_create_initd (const char *file_name);
 tid_t process_fork (const char *name, struct intr_frame *if_);
 int process_exec (void *f_name);
@@ -14,4 +21,5 @@ struct file *process_get_file(int fd);
 void process_close_file(int fd);
 void remove_child_process(struct thread *cp);
 bool install_page(void *upage, void *kpage, bool writable);
+bool lazy_load_segment(struct page *page, void *aux);
 #endif /* userprog/process.h */

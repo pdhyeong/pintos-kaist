@@ -15,6 +15,7 @@
 #include "threads/synch.h"
 #include "filesys/file.h"
 #include "userprog/process.h"
+#include "vm/vm.h"
 #include <string.h>
 
 void syscall_entry(void);
@@ -22,6 +23,8 @@ void syscall_handler(struct intr_frame *);
 struct page* check_address(void *addr);
 int process_add_file(struct file *f);
 struct file *process_get_file(int fd);
+void *mmap (void *addr, size_t length, int writable, int fd, off_t offset);
+void munmap (void *addr);
 
 /* System call.
  *
@@ -374,4 +377,40 @@ void check_valid_buffer(void *buffer, unsigned size, bool to_write)
          exit(-1);
       }
    }
+}
+/*
+fd로 열린 파일을 offset 바이트에서 시작하여 addr의 프로세스 가상 주소 공간으로 매핑하는 length 바이트로 매핑합니다.
+전체 파일은 addr에서 시작하는 연속적인 가상 페이지로 매핑됩니다.
+파일의 길이가 PGSIZE의 배수가 아닌 경우, 최종 매핑 페이지의 일부 바이트가 파일의 끝을 넘어 "밖으로 돌출"됩니다. = 오류
+페이지에 오류가 있을 때 이 바이트를 0으로 설정하고 페이지가 디스크에 다시 기록될 때 이 바이트를 삭제합니다.
+성공하면 이 함수는 파일이 매핑된 가상 주소를 반환합니다.
+실패하면 파일을 매핑하는 데 유효한 주소가 아닌 NULL을 반환해야 합니다.
+fd로 열린 파일의 길이가 0바이트인 경우 mmap 호출이 실패할 수 있습니다.
+간단히 설명하기 위해 지정된 주소에 매핑을 시도할 수 있습니다.
+따라서 addr이 0이면 가상 페이지 0이 매핑되지 않은 것으로 가정하는 일부 Pintos 코드가 있기 때문에 실패해야 합니다.
+길이가 0인 경우에도 mmap이 실패해야 합니다.
+마지막으로 콘솔 입력 및 출력을 나타내는 파일 설명자를 표시할 수 없습니다.
+*/
+void *mmap (void *addr, size_t length, int writable, int fd, off_t offset){
+   if(is_kernel_vaddr(addr)){
+      return NULL;
+   }
+   if(FD_MIN > fd || offset % PGSIZE || addr == 0 || length == 0){
+      return;
+   }
+   struct page * page = spt_find_page(&thread_current()->spt,addr);
+   if(page != NULL){
+      return NULL;
+   }
+   struct file * file = process_get_file(fd);
+   if(file == NULL){
+      return NULL;
+   }
+   if(filesize(fd) == 0){
+      return NULL;
+   }
+   return do_mmap(addr,length,writable, file, offset);
+}
+void munmap (void *addr){
+   do_munmap(addr);
 }

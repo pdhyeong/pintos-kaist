@@ -30,6 +30,7 @@
         "__string": "c",
         "atomic": "c",
         "cstring": "c",
-        "memory": "c"
+        "memory": "c",
+        "thread.h": "c"
     }
 }

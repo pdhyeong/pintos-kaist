@@ -1,6 +1,8 @@
 /* file.c: Implementation of memory backed file object (mmaped object). */
 
 #include "vm/vm.h"
+#include "include/userprog/process.h"
+#include "include/threads/mmu.h"
 
 static bool file_backed_swap_in (struct page *page, void *kva);
 static bool file_backed_swap_out (struct page *page);
@@ -48,11 +50,40 @@ file_backed_destroy (struct page *page) {
 
 /* Do the mmap */
 void *
-do_mmap (void *addr, size_t length, int writable,
-		struct file *file, off_t offset) {
+do_mmap (void *addr, size_t length, int writable, struct file *file, off_t offset) {
+	
+	// while (length > 0)
+	// {
+	// 	size_t page_read_bytes = length < PGSIZE ? length : PGSIZE;
+	// 	size_t page_zero_bytes = PGSIZE - page_read_bytes;
+
+	// 	struct image *file_info = (struct image *)malloc(sizeof(struct image));
+	// 	file_info->file = file;
+	// 	file_info->offset = offset;
+	// 	file_info->read_bytes = page_read_bytes;
+	// 	size_t zero_bytes = page_zero_bytes;
+	// 	void *aux = file_info;
+	// 	if (!vm_alloc_page_with_initializer(VM_FILE, addr,
+	// 										writable, lazy_load_segment, aux))
+	// 		return false;
+
+	// 	/* Advance. */
+	// 	length -= page_read_bytes;
+	// 	zero_bytes -= page_zero_bytes;
+	// 	addr += PGSIZE;
+	// 	offset += page_read_bytes;
+	// }
+	// return addr;
 }
 
 /* Do the munmap */
 void
 do_munmap (void *addr) {
+	// struct page *page = spt_find_page(&thread_current()->spt,addr);
+	// if(pml4_is_dirty(thread_current()->pml4,addr)){
+	// 	pml4_set_dirty();
+	// }
+	// else{
+		
+	// }
 }

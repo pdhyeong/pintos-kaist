@@ -169,10 +169,7 @@ vm_get_frame(void)
 static void
 vm_stack_growth(void *addr UNUSED)
 {
-	if (vm_alloc_page(VM_ANON, addr, 1))
-	{
-		thread_current()->save_stack_bottom -= PGSIZE;
-	}
+	vm_alloc_page(VM_ANON, addr, 1);
 }
 
 /* Handle the fault on write_protected page */
@@ -188,14 +185,14 @@ bool vm_try_handle_fault(struct intr_frame *f UNUSED, void *addr UNUSED,
 	struct supplemental_page_table *spt UNUSED = &thread_current()->spt;
 	/* TODO: Validate the fault */
 	/* TODO: Your code goes here */
-	if (is_kernel_vaddr(addr) || !addr || !not_present)
+	if (is_kernel_vaddr(addr) || !addr)
 	{
 		return false;
 	}
 	struct page *page = spt_find_page(spt, addr);
 	if (page == NULL)
 	{
-		if (thread_current()->save_stack_bottom >= addr && addr >= USER_STACK - (1 << 20))
+		if (addr >= USER_STACK - ONE_MB && addr <= USER_STACK && pg_round_down(f->rsp) <= addr)
 		{
 			vm_stack_growth(pg_round_down(addr));
 			if(vm_claim_page(pg_round_down(addr))){

@@ -36,13 +36,6 @@ struct file *process_get_file(int fd);
 void process_close_file(int fd);
 struct thread *get_child_process(int pid);
 
-struct image
-{
-	off_t offset;
-	size_t read_bytes;
-	struct file *file;
-};
-
 /* General process initializer for initd and other process. */
 static void
 process_init(void)
@@ -766,7 +759,7 @@ install_page(void *upage, void *kpage, bool writable)
 이 함수는 페이지 구조체와 aux를 인자로 받습니다. 
 aux는 load_segment에서 당신이 설정하는 정보입니다. 
 이 정보를 사용하여 당신은 세그먼트를 읽을 파일을 찾고 최종적으로는 세그먼트를 메모리에서 읽어야 합니다.*/
-static bool
+bool
 lazy_load_segment(struct page *page, void *aux)
 {
    /* TODO: Load the segment from the file */
@@ -856,7 +849,6 @@ setup_stack(struct intr_frame *if_)
    if(success){
 		if (vm_claim_page(stack_bottom)){
 			if_->rsp = USER_STACK;
-			thread_current()->save_stack_bottom = stack_bottom;
 		}
    }
 
