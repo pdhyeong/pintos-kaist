@@ -122,13 +122,24 @@ void spt_remove_page(struct supplemental_page_table *spt, struct page *page)
 }
 
 /* Get the struct frame, that will be evicted. */
+/*
+bool pml4_is_accessed (uint64_t *pml4, const void *upage);
+void pml4_set_accessed (uint64_t *pml4, const void *upage, bool accessed);
+사용
+*/
 static struct frame *
 vm_get_victim(void)
 {
-	struct frame *victim = NULL;
-	/* TODO: The policy for eviction is up to you. */
+	//TODO: 희생자 선택
+	// struct frame *victim = NULL;
+	// /* TODO: The policy for eviction is up to you. */
+	// struct thread *cur_thread = thread_current();
+	// struct list_elem *e = &victim->f_elem;
+	// for (e = list_begin (&frame_list); e != list_end (&frame_list); e = list_next (&frame_list)){
+	// 	victim = list_entry(e,struct frame,f_elem);
 
-	return victim;
+	// }
+	// return victim;
 }
 
 /* Evict one page and return the corresponding frame.
@@ -136,10 +147,11 @@ vm_get_victim(void)
 static struct frame *
 vm_evict_frame(void)
 {
-	struct frame *victim UNUSED = vm_get_victim();
+	// TODO: 희생자 올리기
+	// struct frame *victim UNUSED = vm_get_victim();
 	/* TODO: swap out the victim and return the evicted frame. */
 
-	return NULL;
+	// return swap_out(victim->page);
 }
 
 /* palloc() and get frame. If there is no available page, evict the page
@@ -159,17 +171,21 @@ vm_get_frame(void)
 		PANIC("todo");
 	}
 	frame->page = NULL;
-
+	// list_push_back(&frame_list,&frame->f_elem);
 	ASSERT(frame != NULL);
 	ASSERT(frame->page == NULL);
 	return frame;
 }
 
 /* Growing the stack. */
-static void
+static bool
 vm_stack_growth(void *addr UNUSED)
 {
-	vm_alloc_page(VM_ANON, addr, 1);
+	if(vm_alloc_page(VM_ANON, addr, 1)){
+		thread_current()->save_stack_bottom -= PGSIZE;
+		return true;
+	}
+	return false;
 }
 
 /* Handle the fault on write_protected page */
@@ -192,10 +208,11 @@ bool vm_try_handle_fault(struct intr_frame *f UNUSED, void *addr UNUSED,
 	struct page *page = spt_find_page(spt, addr);
 	if (page == NULL)
 	{
-		if (addr >= USER_STACK - ONE_MB && addr <= USER_STACK && pg_round_down(f->rsp) <= addr)
+		if (addr >= USER_STACK - ONE_MB && addr <= USER_STACK && f->rsp - (1<<3) <= addr && thread_current()->save_stack_bottom >= addr)
 		{
-			vm_stack_growth(pg_round_down(addr));
-			if(vm_claim_page(pg_round_down(addr))){
+			void * push_rsp = thread_current()->save_stack_bottom - PGSIZE;
+			vm_stack_growth(push_rsp);
+			if(vm_claim_page(push_rsp)){
 				return true;
 			}
 			return false;
@@ -205,7 +222,6 @@ bool vm_try_handle_fault(struct intr_frame *f UNUSED, void *addr UNUSED,
 	if(vm_do_claim_page(page))
 		return true;
 	return false;
-	// return vm_do_claim_page (page);
 }
 
 /* Free the page.

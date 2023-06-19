@@ -3,6 +3,7 @@
 #include "vm/vm.h"
 #include "include/userprog/process.h"
 #include "include/threads/mmu.h"
+#include "userprog/syscall.h"
 
 static bool file_backed_swap_in (struct page *page, void *kva);
 static bool file_backed_swap_out (struct page *page);
@@ -52,38 +53,51 @@ file_backed_destroy (struct page *page) {
 void *
 do_mmap (void *addr, size_t length, int writable, struct file *file, off_t offset) {
 	
-	// while (length > 0)
-	// {
-	// 	size_t page_read_bytes = length < PGSIZE ? length : PGSIZE;
-	// 	size_t page_zero_bytes = PGSIZE - page_read_bytes;
+	void *init_addr = addr;
+	while (length > 0)
+	{
+		size_t page_read_bytes = length < PGSIZE ? length : PGSIZE;
 
-	// 	struct image *file_info = (struct image *)malloc(sizeof(struct image));
-	// 	file_info->file = file;
-	// 	file_info->offset = offset;
-	// 	file_info->read_bytes = page_read_bytes;
-	// 	size_t zero_bytes = page_zero_bytes;
-	// 	void *aux = file_info;
-	// 	if (!vm_alloc_page_with_initializer(VM_FILE, addr,
-	// 										writable, lazy_load_segment, aux))
-	// 		return false;
+		struct image *aux = (struct image *)malloc(sizeof(struct image));
 
-	// 	/* Advance. */
-	// 	length -= page_read_bytes;
-	// 	zero_bytes -= page_zero_bytes;
-	// 	addr += PGSIZE;
-	// 	offset += page_read_bytes;
-	// }
-	// return addr;
+		aux->file = file;
+		aux->offset = offset;
+		aux->read_bytes = page_read_bytes;
+		if (!vm_alloc_page_with_initializer(VM_FILE, addr,
+											writable, lazy_load_segment, aux))
+			return NULL;
+		
+		/* Advance. */
+		length -= page_read_bytes;
+		addr += PGSIZE;
+		offset += page_read_bytes;
+	}
+	return init_addr;
 }
 
 /* Do the munmap */
 void
 do_munmap (void *addr) {
-	// struct page *page = spt_find_page(&thread_current()->spt,addr);
-	// if(pml4_is_dirty(thread_current()->pml4,addr)){
-	// 	pml4_set_dirty();
-	// }
-	// else{
-		
-	// }
+	struct page *page = spt_find_page(&thread_current()->spt,addr);
+	if(page == NULL){
+		return;
+	}
+	struct thread *cur_thread = thread_current();
+	struct image *file_info = page->uninit.aux;
+
+	if(file_info->file == NULL){
+		return;
+	}
+	while(page != NULL){
+		if(pml4_is_dirty(cur_thread->pml4,addr)){
+			lock_acquire(&filesys_lock);
+			file_seek(file_info->file,file_info->offset);
+			file_write(file_info->file,page->frame->kva,file_info->read_bytes);
+			lock_release(&filesys_lock);
+			pml4_set_dirty(cur_thread->pml4,addr,false);
+		}
+		pml4_clear_page(cur_thread->pml4,addr);
+		addr += PGSIZE;
+		page = spt_find_page(&thread_current()->spt,addr);
+	}
 }

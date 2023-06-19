@@ -105,6 +105,12 @@ void syscall_handler(struct intr_frame *f UNUSED)
    case SYS_CLOSE: /* Close a file. */
       close(f->R.rdi);
       break;
+    case SYS_MMAP:
+      f->R.rax = mmap(f->R.rdi, f->R.rsi, f->R.rdx, f->R.r10, f->R.r8);
+      break;
+   case SYS_MUNMAP:
+      munmap(f->R.rdi);
+      break;
    default:
       thread_exit();
    }
@@ -372,7 +378,7 @@ void check_valid_buffer(void *buffer, unsigned size, bool to_write)
    for (char i = 0; i <= size; i++)
    {
       struct page *page = check_address(buffer + i);
-      if (to_write == false && page->writable == false)
+      if (to_write == true && page->writable == false)
       {
          exit(-1);
       }
@@ -391,26 +397,30 @@ fd로 열린 파일의 길이가 0바이트인 경우 mmap 호출이 실패할 �
 길이가 0인 경우에도 mmap이 실패해야 합니다.
 마지막으로 콘솔 입력 및 출력을 나타내는 파일 설명자를 표시할 수 없습니다.
 */
-void *mmap (void *addr, size_t length, int writable, int fd, off_t offset){
-   if(is_kernel_vaddr(addr)){
+void *mmap(void *addr, size_t length, int writable, int fd, off_t offset)
+{
+   if (is_kernel_vaddr(addr) || !addr  || pg_round_down(addr) != addr || !length || length >= (1<<20))
       return NULL;
-   }
-   if(FD_MIN > fd || offset % PGSIZE || addr == 0 || length == 0){
-      return;
-   }
-   struct page * page = spt_find_page(&thread_current()->spt,addr);
-   if(page != NULL){
+   if (fd < FD_MIN || fd > FD_MAX)
+      exit(-1);
+   if (offset % PGSIZE != 0 )
       return NULL;
-   }
-   struct file * file = process_get_file(fd);
-   if(file == NULL){
+   if (spt_find_page(&thread_current()->spt, addr))
       return NULL;
-   }
-   if(filesize(fd) == 0){
+   struct file *mmap_file = process_get_file(fd);
+   if (mmap_file == NULL)
       return NULL;
-   }
-   return do_mmap(addr,length,writable, file, offset);
+   mmap_file = file_reopen(mmap_file);
+   if (mmap_file == NULL)
+      return NULL;
+   off_t file_ln = file_length(mmap_file);
+   if (file_ln <= 0)
+      return NULL;
+   return do_mmap(addr, file_ln, writable, mmap_file, offset);
 }
 void munmap (void *addr){
+   if(is_kernel_vaddr(addr) || !addr){
+      return NULL;
+   }
    do_munmap(addr);
 }

@@ -35,6 +35,7 @@ int process_add_file(struct file *f);
 struct file *process_get_file(int fd);
 void process_close_file(int fd);
 struct thread *get_child_process(int pid);
+bool lazy_load_segment(struct page *page, void *aux);
 
 /* General process initializer for initd and other process. */
 static void
@@ -814,8 +815,8 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-      /* TODO: Set up aux to pass information to the lazy_load_segment. */
       struct image *file_info = (struct image *)malloc(sizeof(struct image));
+      /* TODO: Set up aux to pass information to the lazy_load_segment. */
       file_info->file = file;
       file_info->offset = ofs;
       file_info->read_bytes = page_read_bytes;
@@ -849,6 +850,7 @@ setup_stack(struct intr_frame *if_)
    if(success){
 		if (vm_claim_page(stack_bottom)){
 			if_->rsp = USER_STACK;
+         thread_current()->save_stack_bottom = stack_bottom;
 		}
    }
 
