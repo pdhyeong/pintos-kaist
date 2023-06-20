@@ -3,6 +3,8 @@
 #include "vm/vm.h"
 #include "devices/disk.h"
 
+disk_sector_t dsize;
+
 /* DO NOT MODIFY BELOW LINE */
 static struct disk *swap_disk;
 static bool anon_swap_in (struct page *page, void *kva);
@@ -21,7 +23,9 @@ static const struct page_operations anon_ops = {
 void
 vm_anon_init (void) {
 	/* TODO: Set up the swap_disk. */
-	swap_disk = NULL;
+	swap_disk = disk_get(1,1);
+	dsize = disk_size(swap_disk) * DISK_SECTOR_SIZE / PGSIZE;
+	swap_table = bitmap_create(dsize);
 }
 
 /* Initialize the file mapping */

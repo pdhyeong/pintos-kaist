@@ -317,7 +317,7 @@ void seek(int fd, unsigned position)
    Use void file_seek(struct file *file, off_t new_pos).
    */
    struct file *seek_file = process_get_file(fd);
-   if (fd < 2)
+   if (fd < FD_MIN)
    {
       return;
    }

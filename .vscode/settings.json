@@ -32,6 +32,16 @@
         "cstring": "c",
         "memory": "c",
         "thread.h": "c",
-        "inspect.h": "c"
+        "inspect.h": "c",
+        "__hash_table": "c",
+        "__split_buffer": "c",
+        "array": "c",
+        "functional": "c",
+        "unordered_map": "c",
+        "init.h": "c",
+        "stdbool.h": "c",
+        "malloc.h": "c",
+        "limits.h": "c",
+        "bitmap.h": "c"
     }
 }

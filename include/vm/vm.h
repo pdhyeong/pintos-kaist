@@ -5,8 +5,10 @@
 #include "threads/palloc.h"
 #include "hash.h"
 #include "threads/vaddr.h"
+#include "include/lib/kernel/bitmap.h"
 
 struct list frame_list;
+struct bitmap* swap_table;
 
 enum vm_type {
 	/* page not initialized */

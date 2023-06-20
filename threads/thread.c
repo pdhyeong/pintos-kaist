@@ -11,6 +11,7 @@
 #include "threads/synch.h"
 #include "threads/vaddr.h"
 #include "intrinsic.h"
+#include "include/vm/vm.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -114,6 +115,7 @@ void thread_init(void)
    list_init(&ready_list);
    list_init(&sleep_list);
    list_init(&destruction_req);
+   list_init(&frame_list);
 
    /* Set up a thread structure for the running thread. */
    initial_thread = running_thread();

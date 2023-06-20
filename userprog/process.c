@@ -36,6 +36,7 @@ struct file *process_get_file(int fd);
 void process_close_file(int fd);
 struct thread *get_child_process(int pid);
 bool lazy_load_segment(struct page *page, void *aux);
+void iter_munmap(void);
 
 /* General process initializer for initd and other process. */
 static void
@@ -377,6 +378,9 @@ void process_exit(void)
       close(i);
    file_close(cur->running_file);
    palloc_free_multiple(cur->fdt,3);
+   #ifdef VM
+   iter_munmap();
+   #endif
    sema_up(&cur->exit_sema);
    sema_down(&cur->free_sema);
    process_cleanup(); // pml4를 날림(이 함수를 call 한 thread의 pml4)
@@ -780,7 +784,19 @@ lazy_load_segment(struct page *page, void *aux)
    memset(page->frame->kva + file_read_bytes, 0, file_zero_bytes);
    return true;
 }
-
+void iter_munmap(void)
+{
+	struct hash_iterator hash_iter;
+	hash_first(&hash_iter, &thread_current()->spt.vm);
+	while (hash_next(&hash_iter))
+	{
+		struct page *page = hash_entry(hash_cur(&hash_iter), struct page, h_elem);
+		if (page->operations->type == VM_FILE)
+		{
+			do_munmap(page->va);
+		}
+	}
+}
 /* Loads a segment starting at offset OFS in FILE at address
  * UPAGE.  In total, READ_BYTES + ZERO_BYTES bytes of virtual
  * memory are initialized, as follows:

@@ -3,6 +3,7 @@
 #include "threads/malloc.h"
 #include "vm/vm.h"
 #include "vm/inspect.h"
+#include "include/threads/mmu.h"
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -130,14 +131,25 @@ void pml4_set_accessed (uint64_t *pml4, const void *upage, bool accessed);
 static struct frame *
 vm_get_victim(void)
 {
-	//TODO: 희생자 선택
+	// //TODO: 희생자 선택
 	// struct frame *victim = NULL;
 	// /* TODO: The policy for eviction is up to you. */
 	// struct thread *cur_thread = thread_current();
 	// struct list_elem *e = &victim->f_elem;
 	// for (e = list_begin (&frame_list); e != list_end (&frame_list); e = list_next (&frame_list)){
 	// 	victim = list_entry(e,struct frame,f_elem);
-
+	// 	if(pml4_is_accessed(cur_thread->pml4,victim->page->va)){
+	// 		pml4_set_accessed(cur_thread->pml4,victim->page->va,0);
+	// 	}
+	// 	else{
+	// 		return victim;
+	// 	}
+	// }
+	// for (e = list_begin (&frame_list); e != list_end (&frame_list); e = list_next (&frame_list)){
+	// 	victim = list_entry(e,struct frame,f_elem);
+	// 	if(pml4_is_accessed(cur_thread->pml4,victim->page->va)){
+	// 		pml4_set_accessed(cur_thread->pml4,victim->page->va,0);
+	// 	}
 	// }
 	// return victim;
 }
@@ -205,23 +217,15 @@ bool vm_try_handle_fault(struct intr_frame *f UNUSED, void *addr UNUSED,
 	{
 		return false;
 	}
-	struct page *page = spt_find_page(spt, addr);
-	if (page == NULL)
+	if (not_present)
 	{
 		if (addr >= USER_STACK - ONE_MB && addr <= USER_STACK && f->rsp - (1<<3) <= addr && thread_current()->save_stack_bottom >= addr)
 		{
-			void * push_rsp = thread_current()->save_stack_bottom - PGSIZE;
-			vm_stack_growth(push_rsp);
-			if(vm_claim_page(push_rsp)){
-				return true;
-			}
-			return false;
+			addr = thread_current()->save_stack_bottom - PGSIZE;
+			vm_stack_growth(addr);
 		}
-		return false;
 	}
-	if(vm_do_claim_page(page))
-		return true;
-	return false;
+	return vm_claim_page(addr);
 }
 
 /* Free the page.
@@ -259,7 +263,6 @@ vm_do_claim_page(struct page *page)
 	if (install_page(page->va, frame->kva, page->writable))
 	{
 		return swap_in(page, frame->kva);
-		// return true;
 	}
 	return false;
 }
