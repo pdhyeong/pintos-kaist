@@ -6,10 +6,11 @@
 #include "hash.h"
 #include "threads/vaddr.h"
 #include "include/lib/kernel/bitmap.h"
+#include "include/devices/disk.h"
 
 struct list frame_list;
 struct bitmap* swap_table;
-
+struct list_elem *start_clock;
 enum vm_type {
 	/* page not initialized */
 	VM_UNINIT = 0,

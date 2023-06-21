@@ -19,6 +19,7 @@ void vm_init(void)
 	/* DO NOT MODIFY UPPER LINES. */
 	/* TODO: Your code goes here. */
 	list_init(&frame_list);
+	start_clock = list_begin(&frame_list);
 }
 
 /* Get the type of the page. This function is useful if you want to know the
@@ -124,36 +125,45 @@ void spt_remove_page(struct supplemental_page_table *spt, struct page *page)
 }
 
 /* Get the struct frame, that will be evicted. */
-/*
-bool pml4_is_accessed (uint64_t *pml4, const void *upage);
-void pml4_set_accessed (uint64_t *pml4, const void *upage, bool accessed);
-사용
-*/
 static struct frame *
 vm_get_victim(void)
 {
-	// //TODO: 희생자 선택
-	struct frame *victim = NULL;
-	// /* TODO: The policy for eviction is up to you. */
-	// struct thread *cur_thread = thread_current();
-	// struct list_elem *e = &victim->f_elem;
-	// for (e = list_begin (&frame_list); e != list_end (&frame_list); e = list_next (&frame_list)){
-	// 	victim = list_entry(e,struct frame,f_elem);
-	// 	if(pml4_is_accessed(cur_thread->pml4,victim->page->va)){
-	// 		pml4_set_accessed(cur_thread->pml4,victim->page->va,0);
-	// 	}
-	// 	else{
-	// 		return victim;
-	// 	}
-	// }
-	// for (e = list_begin (&frame_list); e != list_end (&frame_list); e = list_next (&frame_list)){
-	// 	victim = list_entry(e,struct frame,f_elem);
-	// 	if(pml4_is_accessed(cur_thread->pml4,victim->page->va)){
-	// 		pml4_set_accessed(cur_thread->pml4,victim->page->va,0);
-	// 	}
-	// }
-	return NULL;
+	/* TODO: The policy for eviction is up to you. */
+	struct list_elem *victim_elem = list_pop_front(&frame_list);
+	struct frame *victim = list_entry(victim_elem, struct frame, f_elem);
+	struct list_elem *search_elem = start_clock;
+
+	for (; start_clock != list_end(&frame_list); start_clock = list_next(start_clock))
+	{
+		victim = list_entry(start_clock, struct frame, f_elem);
+
+		if (pml4_is_accessed(thread_current()->pml4, victim->page->va))
+		{
+			pml4_set_accessed(thread_current()->pml4, victim->page->va, 0);
+		}
+		else
+		{
+			return victim;
+		}
+	}
+
+	for (start_clock = list_begin(&frame_list); start_clock != search_elem; start_clock = list_next(start_clock))
+	{
+		victim = list_entry(start_clock, struct frame, f_elem);
+
+		if (pml4_is_accessed(thread_current()->pml4, victim->page->va))
+		{
+			pml4_set_accessed(thread_current()->pml4, victim->page->va, 0);
+		}
+		else
+		{
+			return victim;
+		}
+	}
+
+	return victim;
 }
+
 
 /* Evict one page and return the corresponding frame.
  * Return NULL on error.*/
@@ -163,8 +173,8 @@ vm_evict_frame(void)
 	// TODO: 희생자 올리기
 	struct frame *victim UNUSED = vm_get_victim();
 	/* TODO: swap out the victim and return the evicted frame.*/
-
-	return NULL;
+	swap_out(victim->page);
+	return victim;
 }
 
 /* palloc() and get frame. If there is no available page, evict the page
@@ -180,11 +190,10 @@ vm_get_frame(void)
 	frame->kva = palloc_get_page(PAL_USER);
 	if (frame->kva == NULL)
 	{
-		frame->page = NULL;
-		PANIC("todo");
+		frame = vm_evict_frame();
 	}
 	frame->page = NULL;
-	// list_push_back(&frame_list,&frame->f_elem);
+	list_push_back(&frame_list,&frame->f_elem);
 	ASSERT(frame != NULL);
 	ASSERT(frame->page == NULL);
 	return frame;
