@@ -379,7 +379,9 @@ void process_exit(void)
    file_close(cur->running_file);
    palloc_free_multiple(cur->fdt,3);
    #ifdef VM
-   iter_munmap();
+   if(!hash_empty(&thread_current()->spt.vm)){
+      iter_munmap();
+   }
    #endif
    sema_up(&cur->exit_sema);
    sema_down(&cur->free_sema);

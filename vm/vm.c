@@ -18,6 +18,7 @@ void vm_init(void)
 	register_inspect_intr();
 	/* DO NOT MODIFY UPPER LINES. */
 	/* TODO: Your code goes here. */
+	list_init(&frame_list);
 }
 
 /* Get the type of the page. This function is useful if you want to know the
@@ -132,7 +133,7 @@ static struct frame *
 vm_get_victim(void)
 {
 	// //TODO: 희생자 선택
-	// struct frame *victim = NULL;
+	struct frame *victim = NULL;
 	// /* TODO: The policy for eviction is up to you. */
 	// struct thread *cur_thread = thread_current();
 	// struct list_elem *e = &victim->f_elem;
@@ -151,7 +152,7 @@ vm_get_victim(void)
 	// 		pml4_set_accessed(cur_thread->pml4,victim->page->va,0);
 	// 	}
 	// }
-	// return victim;
+	return NULL;
 }
 
 /* Evict one page and return the corresponding frame.
@@ -160,10 +161,10 @@ static struct frame *
 vm_evict_frame(void)
 {
 	// TODO: 희생자 올리기
-	// struct frame *victim UNUSED = vm_get_victim();
-	/* TODO: swap out the victim and return the evicted frame. */
+	struct frame *victim UNUSED = vm_get_victim();
+	/* TODO: swap out the victim and return the evicted frame.*/
 
-	// return swap_out(victim->page);
+	return NULL;
 }
 
 /* palloc() and get frame. If there is no available page, evict the page
