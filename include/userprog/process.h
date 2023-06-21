@@ -3,7 +3,7 @@
 
 #include "threads/thread.h"
 
-struct image
+struct info
 {
 	off_t offset;
 	size_t read_bytes;

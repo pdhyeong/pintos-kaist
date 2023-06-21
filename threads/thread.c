@@ -11,7 +11,6 @@
 #include "threads/synch.h"
 #include "threads/vaddr.h"
 #include "intrinsic.h"
-#include "include/vm/vm.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -407,7 +406,8 @@ void test_max_priority(void)
    //  현재 쓰레드의 우선수위가 더 작다면 thread_yield()
    if (list_entry(ready_list.head.next, struct thread, elem)->priority > thread_get_priority())
    {
-      thread_yield();
+      if(!intr_context())
+         thread_yield();
    }
 }
 

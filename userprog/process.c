@@ -34,9 +34,8 @@ void argument_stack(char **parse, int count, void **rsp);
 int process_add_file(struct file *f);
 struct file *process_get_file(int fd);
 void process_close_file(int fd);
+void remove_child_process(struct thread *cp);
 struct thread *get_child_process(int pid);
-bool lazy_load_segment(struct page *page, void *aux);
-void iter_munmap(void);
 
 /* General process initializer for initd and other process. */
 static void
@@ -138,6 +137,9 @@ duplicate_pte(uint64_t *pte, void *va, void *aux)
    /* 3. TODO: Allocate new PAL_USER page for the child and set result to
     *    TODO: NEWPAGE. */
    newpage = palloc_get_page(PAL_USER);
+   if(newpage == NULL){
+      return false;
+   }
    /* 4. TODO: Duplicate parent's page to the new page and
     *    TODO: check whether parent's page is writable or not (set WRITABLE
     *    TODO: according to the result). */
@@ -244,11 +246,11 @@ int process_exec(void *f_name)
 
    /* We first kill the current context */
    process_cleanup();
-   #ifdef VM
-   supplemental_page_table_init(&cur->spt);
-   #endif
+#ifdef VM
+	supplemental_page_table_init(&cur->spt);
+#endif
    // for argument parsing
-   char *parse[128];
+   char *parse[64];
    int count = 0;
 
    char *token;
@@ -268,12 +270,9 @@ int process_exec(void *f_name)
       palloc_free_page(file_name);
       return -1;
    }
-   
    argument_stack(parse, count, &_if.rsp);
-
    _if.R.rdi = count;
    _if.R.rsi = _if.rsp + 8;
-
    palloc_free_page(file_name);
 
    /* Start switched process. */
@@ -346,6 +345,11 @@ void process_close_file(int fd)
    }
    cur->fdt[fd] = NULL;
 }
+void remove_child_process(struct thread *cp)
+{
+   list_remove(&cp->child_elem);
+   palloc_free_page(cp);
+}
 
 /* Waits for thread TID to die and returns its exit status.  If
  * it was terminated by the kernel (i.e. killed due to an
@@ -374,17 +378,16 @@ int process_wait(tid_t child_tid UNUSED)
 void process_exit(void)
 {
    struct thread *cur = thread_current();
-   for (int i = FD_MIN; i < FD_MAX; i++)
+   for (int i = 2; i < 64; i++)
       close(i);
    file_close(cur->running_file);
-   palloc_free_multiple(cur->fdt,3);
-   #ifdef VM
-   if(!hash_empty(&thread_current()->spt.vm)){
-      iter_munmap();
-   }
-   #endif
+
+	if(!hash_empty(&cur->spt.vm))
+      exit_do_munmap(&cur->spt.vm);
+
    sema_up(&cur->exit_sema);
    sema_down(&cur->free_sema);
+
    process_cleanup(); // pml4를 날림(이 함수를 call 한 thread의 pml4)
 }
 
@@ -772,9 +775,9 @@ lazy_load_segment(struct page *page, void *aux)
    /* TODO: Load the segment from the file */
    /* TODO: This called when the first page fault occurs on address VA. */
    /* TODO: VA is available when calling this function. */
-   struct file *file = ((struct image *)aux)->file;
-   off_t ofs = ((struct image *)aux)->offset;
-   uint32_t file_read_bytes = ((struct image *)aux)->read_bytes;
+   struct file *file = ((struct info *)aux)->file;
+   off_t ofs = ((struct info *)aux)->offset;
+   uint32_t file_read_bytes = ((struct info *)aux)->read_bytes;
    uint32_t file_zero_bytes = PGSIZE - file_read_bytes;
    file_seek(file,ofs);
    
@@ -786,19 +789,7 @@ lazy_load_segment(struct page *page, void *aux)
    memset(page->frame->kva + file_read_bytes, 0, file_zero_bytes);
    return true;
 }
-void iter_munmap(void)
-{
-	struct hash_iterator hash_iter;
-	hash_first(&hash_iter, &thread_current()->spt.vm);
-	while (hash_next(&hash_iter))
-	{
-		struct page *page = hash_entry(hash_cur(&hash_iter), struct page, h_elem);
-		if (page->operations->type == VM_FILE)
-		{
-			do_munmap(page->va);
-		}
-	}
-}
+
 /* Loads a segment starting at offset OFS in FILE at address
  * UPAGE.  In total, READ_BYTES + ZERO_BYTES bytes of virtual
  * memory are initialized, as follows:
@@ -833,13 +824,12 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-      struct image *file_info = (struct image *)malloc(sizeof(struct image));
       /* TODO: Set up aux to pass information to the lazy_load_segment. */
-      file_info->file = file;
-      file_info->offset = ofs;
-      file_info->read_bytes = page_read_bytes;
+      struct info *aux = (struct info *)malloc(sizeof(struct info));
+      aux->file = file;
+      aux->offset = ofs;
+      aux->read_bytes = page_read_bytes;
 
-      void *aux = file_info;
       if (!vm_alloc_page_with_initializer(VM_ANON, upage,
                                           writable, lazy_load_segment, aux))
          return false;
@@ -864,12 +854,12 @@ setup_stack(struct intr_frame *if_)
     * TODO: If success, set the rsp accordingly.
     * TODO: You should mark the page is stack. */
    /* TODO: Your code goes here */
-   success = vm_alloc_page(VM_ANON|VM_MARKER_0, stack_bottom, true);
+   success = vm_alloc_page(VM_ANON | VM_MARKER_0, stack_bottom, true);
    if(success){
 		if (vm_claim_page(stack_bottom)){
-			if_->rsp = USER_STACK;
-         thread_current()->save_stack_bottom = stack_bottom;
-		}
+			if_->rsp = (uintptr_t)USER_STACK;
+         thread_current()->save_stack_bottom = (intptr_t)stack_bottom;
+      }
    }
 
    return success;

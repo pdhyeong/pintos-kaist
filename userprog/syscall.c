@@ -20,9 +20,25 @@
 
 void syscall_entry(void);
 void syscall_handler(struct intr_frame *);
-struct page* check_address(void *addr);
+struct page *check_address(void *addr);
+void get_argument(void *rsp, int *arg, int count);
+void halt(void);
+void exit(int status);
+pid_t fork(const char *thread_name);
+int exec(const char *cmd_line);
+int wait(pid_t pid);
+bool create(const char *file, unsigned initial_size);
+bool remove(const char *file);
+int open(const char *file);
+int filesize(int fd);
+int read(int fd, void *buffer, unsigned size);
+int write(int fd, const void *buffer, unsigned size);
+void seek(int fd, unsigned position);
+unsigned tell(int fd);
+void close(int fd);
 int process_add_file(struct file *f);
 struct file *process_get_file(int fd);
+void check_valid_buffer(void *buffer, unsigned size, bool to_write);
 void *mmap (void *addr, size_t length, int writable, int fd, off_t offset);
 void munmap (void *addr);
 
@@ -57,7 +73,6 @@ void syscall_init(void)
 void syscall_handler(struct intr_frame *f UNUSED)
 {
    // TODO: Your implementation goes here.
-   // check_address(f->rsp);
    struct thread *cur = thread_current();
    memcpy(&cur->tf, f, sizeof(struct intr_frame));
    int syscall_num = f->R.rax;
@@ -105,7 +120,7 @@ void syscall_handler(struct intr_frame *f UNUSED)
    case SYS_CLOSE: /* Close a file. */
       close(f->R.rdi);
       break;
-    case SYS_MMAP:
+   case SYS_MMAP:
       f->R.rax = mmap(f->R.rdi, f->R.rsi, f->R.rdx, f->R.r10, f->R.r8);
       break;
    case SYS_MUNMAP:
@@ -176,8 +191,8 @@ int exec(const char *cmd_line)
    check_address(cmd_line);
    char *fn_copy;
    tid_t tid;
-   
-   fn_copy = palloc_get_page(PAL_ZERO);
+
+   fn_copy = palloc_get_page(PAL_USER | PAL_ZERO);
    if (fn_copy == NULL)
       return TID_ERROR;
    strlcpy(fn_copy, cmd_line, PGSIZE);
@@ -236,9 +251,9 @@ buffer 안에 fd 로 열려있는 파일로부터 size 바이트를 읽습니다
 */
 int read(int fd, void *buffer, unsigned size)
 {
-   #ifdef VM
+#ifdef VM
    check_valid_buffer(buffer, size, true);
-   #endif
+#endif
    int file_size;
    char *read_buffer = buffer;
    if (fd == 0)
@@ -317,7 +332,7 @@ void seek(int fd, unsigned position)
    Use void file_seek(struct file *file, off_t new_pos).
    */
    struct file *seek_file = process_get_file(fd);
-   if (fd < FD_MIN)
+   if (fd < 2)
    {
       return;
    }
@@ -347,62 +362,13 @@ void close(int fd)
    process_close_file(fd);
    return file_close(close_file);
 }
-/*
-주소 값이 유저 영역 주소 값인지 확인
-유저 영역을 벗어난 영역일 경우 프로세스 종료(exit(-1)
-*/
-struct page *check_address(void *addr)
-{
-   struct thread *curr = thread_current();
-#ifdef VM
-   if (is_kernel_vaddr(addr) || !addr)
-   {
-      exit(-1);
-   }
-   struct page *page = spt_find_page(&thread_current()->spt, addr);
-   if (!page)
-   {
-      exit(-1);
-   }
-   return page;
-#else
-   if (!is_user_vaddr(addr) || pml4_get_page(curr->pml4, addr) == NULL)
-   {
-      exit(-1);
-   }
-#endif
-}
 
-void check_valid_buffer(void *buffer, unsigned size, bool to_write)
-{
-   for (char i = 0; i <= size; i++)
-   {
-      struct page *page = check_address(buffer + i);
-      if (to_write == true && page->writable == false)
-      {
-         exit(-1);
-      }
-   }
-}
-/*
-fd로 열린 파일을 offset 바이트에서 시작하여 addr의 프로세스 가상 주소 공간으로 매핑하는 length 바이트로 매핑합니다.
-전체 파일은 addr에서 시작하는 연속적인 가상 페이지로 매핑됩니다.
-파일의 길이가 PGSIZE의 배수가 아닌 경우, 최종 매핑 페이지의 일부 바이트가 파일의 끝을 넘어 "밖으로 돌출"됩니다. = 오류
-페이지에 오류가 있을 때 이 바이트를 0으로 설정하고 페이지가 디스크에 다시 기록될 때 이 바이트를 삭제합니다.
-성공하면 이 함수는 파일이 매핑된 가상 주소를 반환합니다.
-실패하면 파일을 매핑하는 데 유효한 주소가 아닌 NULL을 반환해야 합니다.
-fd로 열린 파일의 길이가 0바이트인 경우 mmap 호출이 실패할 수 있습니다.
-간단히 설명하기 위해 지정된 주소에 매핑을 시도할 수 있습니다.
-따라서 addr이 0이면 가상 페이지 0이 매핑되지 않은 것으로 가정하는 일부 Pintos 코드가 있기 때문에 실패해야 합니다.
-길이가 0인 경우에도 mmap이 실패해야 합니다.
-마지막으로 콘솔 입력 및 출력을 나타내는 파일 설명자를 표시할 수 없습니다.
-*/
 void *mmap(void *addr, size_t length, int writable, int fd, off_t offset)
 {
-   if (is_kernel_vaddr(addr) || !addr  || pg_round_down(addr) != addr || !length || length >= (1<<20))
+   if (is_kernel_vaddr(addr) || !addr  || pg_round_down(addr) != addr || !length || length >= (1<<23))
       return NULL;
    if (fd < FD_MIN || fd > FD_MAX)
-      exit(-1);
+      return NULL;
    if (offset % PGSIZE != 0 )
       return NULL;
    if (spt_find_page(&thread_current()->spt, addr))
@@ -418,9 +384,42 @@ void *mmap(void *addr, size_t length, int writable, int fd, off_t offset)
       return NULL;
    return do_mmap(addr, file_ln, writable, mmap_file, offset);
 }
+
 void munmap (void *addr){
-   if(is_kernel_vaddr(addr) || !addr){
+   if(is_kernel_vaddr(addr) || !addr)
       return NULL;
-   }
    do_munmap(addr);
+}
+
+/*
+주소 값이 유저 영역 주소 값인지 확인
+유저 영역을 벗어난 영역일 경우 프로세스 종료(exit(-1)
+*/
+struct page *check_address(void *addr)
+{
+   struct thread *curr = thread_current();
+#ifdef VM
+   if (is_kernel_vaddr(addr) || !addr){
+      exit(-1);
+   }
+   struct page *page = spt_find_page(&thread_current()->spt, addr);
+   if(!page){
+      exit(-1);
+   }
+   return page;
+#else
+   if (!is_user_vaddr(addr) || pml4_get_page(curr->pml4, addr) == NULL)
+   {
+      exit(-1);
+   }
+#endif
+}
+
+void check_valid_buffer(void *buffer, unsigned size, bool to_write){
+   for(char i = 0; i <= size; i++){
+      struct page *page = check_address(buffer + i);
+      if(to_write == true && page->writable == false){
+         exit(-1);
+      }
+   }
 }
