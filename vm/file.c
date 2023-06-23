@@ -87,6 +87,57 @@ file_backed_destroy (struct page *page) {
 
 /* Do the mmap */
 /* Do the mmap */
+static bool
+lazy_mmap(struct page *page, void *aux)
+{
+	/* project 3 virtual memory */
+	struct frame *load_frame = page->frame;
+	struct file_page *file_page UNUSED = &page->file;
+
+	file_page->file = ((struct info *)aux)->file;
+	file_page->ofs = ((struct info *)aux)->offset;
+	file_page->page_read_bytes = ((struct info *)aux)->read_bytes;
+
+	file_seek(file_page->file, file_page->ofs);
+
+	if (file_read(file_page->file, load_frame->kva, file_page->page_read_bytes) != (int)file_page->page_read_bytes)
+	{
+		palloc_free_page(load_frame->kva);
+		free(aux);
+		return false;
+	}
+
+	memset(load_frame->kva + file_page->page_read_bytes, 0, PGSIZE - file_page->page_read_bytes);
+	free(aux);
+	return true;
+}
+// void *
+// do_mmap(void *addr, size_t length, int writable,
+// 		struct file *file, off_t offset)
+// {
+// 	size_t read_bytes = length;
+// 	void *init_addr = addr;
+// 	while (read_bytes > 0)
+// 	{
+// 		size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
+
+// 		struct info *aux = (struct info *)malloc(sizeof(struct info));
+// 		aux->file = file;
+// 		aux->offset = offset;
+// 		aux->read_bytes = page_read_bytes;
+
+// 		if (!vm_alloc_page_with_initializer(VM_FILE, addr, writable, lazy_load_segment, aux))
+// 		{
+// 			return;
+// 		}
+
+// 		read_bytes -= page_read_bytes;
+// 		addr += PGSIZE;
+// 		offset += page_read_bytes;
+// 	}
+// 	return init_addr;
+// }
+
 void *
 do_mmap(void *addr, size_t length, int writable,
 		struct file *file, off_t offset)
@@ -97,14 +148,29 @@ do_mmap(void *addr, size_t length, int writable,
 	{
 		size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
 
+		if (spt_find_page(&thread_current()->spt, addr))
+		{
+			while (init_addr < addr)
+			{
+				struct page *page = spt_find_page(&thread_current()->spt, addr);
+				spt_remove_page(&thread_current()->spt, page);
+				init_addr += PGSIZE;
+			}
+		}
 		struct info *aux = (struct info *)malloc(sizeof(struct info));
 		aux->file = file;
 		aux->offset = offset;
 		aux->read_bytes = page_read_bytes;
 
-		if (!vm_alloc_page_with_initializer(VM_FILE, addr, writable, lazy_load_segment, aux))
+		if (!vm_alloc_page_with_initializer(VM_FILE, addr, writable, lazy_mmap, aux))
 		{
-			return;
+			free(aux);
+			while (init_addr < addr)
+			{
+				struct page *page = spt_find_page(&thread_current()->spt, addr);
+				spt_remove_page(&thread_current()->spt, page);
+				init_addr += PGSIZE;
+			}
 		}
 
 		read_bytes -= page_read_bytes;
@@ -113,26 +179,24 @@ do_mmap(void *addr, size_t length, int writable,
 	}
 	return init_addr;
 }
-
 /* Do the munmap */
 void do_munmap(void *addr)
 {
 	struct thread *cur = thread_current();
 	struct page *page = spt_find_page(&cur->spt, addr);
 	if (page == NULL)
-		return; 
-	struct info *file_info = page->uninit.aux;
-	if (!file_info->file)
+		return;
+	if (!page->file.file)
 		return;
 	while (page != NULL)
 	{
 		if (pml4_is_dirty(cur->pml4, addr))
 		{
 			lock_acquire(&filesys_lock);
-			file_seek(file_info->file, file_info->offset);
-			file_write(file_info->file, page->frame->kva, file_info->read_bytes);
+			file_seek(page->file.file, page->file.ofs);
+			file_write(page->file.file, page->frame->kva, page->file.page_read_bytes);
 			lock_release(&filesys_lock);
-			// pml4_set_dirty(cur->pml4, addr, false);
+			pml4_set_dirty(cur->pml4, addr, false);
 		}
 		pml4_clear_page(cur->pml4, addr);
 		addr += PGSIZE;
