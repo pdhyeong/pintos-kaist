@@ -74,7 +74,7 @@ void syscall_handler(struct intr_frame *f UNUSED)
 {
    // TODO: Your implementation goes here.
    struct thread *cur = thread_current();
-   memcpy(&cur->tf, f, sizeof(struct intr_frame));
+   cur->rsp_save = f->rsp;
    int syscall_num = f->R.rax;
    switch (syscall_num)
    {
@@ -85,6 +85,7 @@ void syscall_handler(struct intr_frame *f UNUSED)
       exit(f->R.rdi);
       break;
    case SYS_FORK: /* Clone current process. */
+      memcpy(&cur->tf, f, sizeof(struct intr_frame));
       f->R.rax = fork(f->R.rdi);
       break;
    case SYS_EXEC: /* Switch current process. */
@@ -365,24 +366,7 @@ void close(int fd)
 
 void *mmap(void *addr, size_t length, int writable, int fd, off_t offset)
 {
-   if (is_kernel_vaddr(addr) || !addr  || pg_round_down(addr) != addr || !length || length >= (1<<23))
-      return NULL;
-   if (fd < FD_MIN || fd > FD_MAX)
-      return NULL;
-   if (offset % PGSIZE != 0 )
-      return NULL;
-   if (spt_find_page(&thread_current()->spt, addr))
-      return NULL;
-   struct file *mmap_file = process_get_file(fd);
-   if (mmap_file == NULL)
-      return NULL;
-   mmap_file = file_reopen(mmap_file);
-   if (mmap_file == NULL)
-      return NULL;
-   off_t file_ln = file_length(mmap_file);
-   if (file_ln <= 0)
-      return NULL;
-   return do_mmap(addr, file_ln, writable, mmap_file, offset);
+   
 }
 
 void munmap (void *addr){

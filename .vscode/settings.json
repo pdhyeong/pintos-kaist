@@ -42,6 +42,7 @@
         "stdbool.h": "c",
         "malloc.h": "c",
         "limits.h": "c",
-        "bitmap.h": "c"
+        "bitmap.h": "c",
+        "loader.h": "c"
     }
 }

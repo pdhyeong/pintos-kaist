@@ -65,7 +65,6 @@ struct page {
 	size_t read_bytes; /* 가상페이지에 쓰여져 있는 데이터 크기 */
 	size_t zero_bytes; /* 0으로 채울 남은 페이지의 바이트 */
 
-	size_t swap_slot; /* 스왑 슬롯 */
 	struct hash_elem h_elem; /* 해시 테이블 element */
 
 	/* Per-type data are binded into the union.
